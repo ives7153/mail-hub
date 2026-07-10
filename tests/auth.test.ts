@@ -23,6 +23,7 @@ describe('API authentication and admin boundaries', () => {
 
     const cases: Array<[string, RequestInit]> = [
       ['/api/keys', { headers: authHeaders('mk_user') }],
+      ['/api/activity', { headers: authHeaders('mk_user') }],
       ['/api/outlook/accounts', { headers: authHeaders('mk_user') }],
       ['/api/yyds/accounts', { headers: authHeaders('mk_user') }],
       ['/api/providers/mailtm', { method: 'PATCH', headers: jsonHeaders('mk_user'), body: JSON.stringify({ enabled: false }) }],

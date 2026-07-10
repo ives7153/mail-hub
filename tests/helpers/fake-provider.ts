@@ -6,12 +6,14 @@ export class FakeProvider extends BaseProvider {
   messagesCount = 0;
   domains: string[];
   createdDomains: string[] = [];
+  inboxExpiresAt: string | null;
 
   meta: ProviderMeta;
 
-  constructor(opts: Partial<ProviderMeta> & { domains?: string[] } = {}) {
+  constructor(opts: Partial<ProviderMeta> & { domains?: string[]; expiresAt?: string | null } = {}) {
     super();
     this.domains = opts.domains ?? ['example.test'];
+    this.inboxExpiresAt = opts.expiresAt === undefined ? '2099-01-01T00:00:00.000Z' : opts.expiresAt;
     this.meta = {
     name: 'fake',
     displayName: 'Fake Mail',
@@ -54,7 +56,7 @@ export class FakeProvider extends BaseProvider {
       authData: { token: `token-${this.createCount}` },
       provider: this.meta.name,
       apiBase: 'https://fake.test',
-      expiresAt: '2099-01-01T00:00:00.000Z',
+      ...(this.inboxExpiresAt ? { expiresAt: this.inboxExpiresAt } : {}),
     };
   }
 

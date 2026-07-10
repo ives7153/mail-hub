@@ -13,13 +13,13 @@ import { imapRoutes } from './routes/imap.js';
 import { serviceRoutes } from './routes/services.js';
 import { templateProviderRoutes } from './routes/template-providers.js';
 import { allRows, DEFAULT_SETTINGS, getDb, getRow, getSetting, logActivity } from './db.js';
-import { hashApiKey } from './crypto.js';
-import type { AdminEnv } from './routes/admin.js';
+import { hashApiKey, secureCompare } from './crypto.js';
+import { requireAdmin, type AdminEnv } from './routes/admin.js';
 import { parseStoredInbox, releaseInboxResources } from './inbox-lifecycle.js';
 import { checkToken } from './providers/outlook.js';
 import { createLogger } from './logger.js';
 import { settingsRoutes } from './routes/settings.js';
-import { todayDateString } from './utils.js';
+import { runConcurrent, todayDateString } from './utils.js';
 import { APP_VERSION } from './version.js';
 import { errorMessage, httpStatus, jsonStatus } from './errors.js';
 import { requestLogger } from './request-logger.js';
@@ -386,7 +386,7 @@ export function createApp(): Hono<AdminEnv> {
     const token = auth?.startsWith('Bearer ') ? auth.slice(7) : '';
     if (!token) return c.json({ error: 'Unauthorized' }, 401);
 
-    if (token === config.apiSecret) {
+    if (secureCompare(token, config.apiSecret)) {
       c.set('isAdmin', true);
       c.set('apiKey', token);
       return next();
@@ -460,7 +460,7 @@ export function createApp(): Hono<AdminEnv> {
   app.route('/api', templateProviderRoutes);
   app.route('/api', settingsRoutes);
 
-  app.get('/api/activity', (c) => {
+  app.get('/api/activity', requireAdmin, (c) => {
     const db = getDb();
     const rows = allRows<{ type: string; text: string; created_at: string }>(
       db,
@@ -481,9 +481,31 @@ export async function cleanupExpired(): Promise<void> {
     const retentionInboxDays = Math.max(1, parseInt(getSetting('retention_inbox_days', DEFAULT_SETTINGS.retention_inbox_days), 10) || 7);
     const retentionFailLogDays = Math.max(1, parseInt(getSetting('retention_faillog_days', DEFAULT_SETTINGS.retention_faillog_days), 10) || 7);
     const retentionActivityDays = Math.max(1, parseInt(getSetting('retention_activity_days', DEFAULT_SETTINGS.retention_activity_days), 10) || 30);
-    db.prepare(`UPDATE inboxes SET status = 'closed' WHERE expires_at IS NOT NULL AND datetime(expires_at) < datetime('now') AND status = 'active'`)
-      .run();
 
+    // 1. Close expired inboxes and release their pool resources immediately,
+    //    so Outlook accounts / YYDS slots return to the pool at expiry time
+    //    instead of waiting for the purge a day later.
+    const expired = allRows<{ id: string; provider: string; address: string; auth_data: string; api_base: string | null }>(db, `
+      SELECT id, provider, address, auth_data, api_base
+      FROM inboxes
+      WHERE status = 'active' AND expires_at IS NOT NULL AND datetime(expires_at) < datetime('now')
+    `);
+    if (expired.length > 0) {
+      const close = db.prepare(`UPDATE inboxes SET status = 'closed' WHERE id = ?`);
+      for (const row of expired) close.run(row.id);
+      for (const row of expired) {
+        try {
+          await releaseInboxResources(parseStoredInbox(row), { deleteExternal: false });
+        } catch (e) {
+          log.error('failed to release inbox resources', { inboxId: row.id, error: errorMessage(e) });
+        }
+      }
+      log.info('closed expired inboxes', { count: expired.length });
+    }
+
+    // 2. Purge old closed inboxes. Releasing again is near-idempotent (YYDS
+    //    inbox_count may double-decrement, it is display-only and floored at 0)
+    //    and catches rows closed before release-at-expiry existed.
     const rows = allRows<{ id: string; provider: string; address: string; auth_data: string; api_base: string | null }>(db, `
       SELECT id, provider, address, auth_data, api_base
       FROM inboxes
@@ -508,6 +530,26 @@ export async function cleanupExpired(): Promise<void> {
       }
       log.info('purged expired inboxes', { count: rows.length });
     }
+
+    // 3. Retention purges run before any network-dependent work so an upstream
+    //    outage can never starve them.
+    db.prepare(`DELETE FROM fail_log WHERE datetime(reported_at) < datetime('now', ?)`).run(`-${retentionFailLogDays} days`);
+    db.prepare(`DELETE FROM activity_log WHERE datetime(created_at) < datetime('now', ?)`).run(`-${retentionActivityDays} days`);
+
+    // 4. Free Outlook accounts whose assigned inbox no longer exists (process
+    //    crashed between pool claim and inbox insert, or row purged abnormally).
+    const reaped = db.prepare(
+      `UPDATE outlook_accounts SET assigned_inbox_id = NULL
+       WHERE assigned_inbox_id IS NOT NULL
+         AND assigned_inbox_id NOT IN (SELECT id FROM inboxes)`,
+    ).run();
+    if (reaped.changes > 0) {
+      log.info('released orphaned Outlook assignments', { count: reaped.changes });
+    }
+
+    // 5. Daily Outlook token check. 'unknown' (network/throttle/5xx) must never
+    //    flip token_status — the purge below deletes invalid accounts, and an
+    //    upstream outage must not wipe the pool.
     const toCheck = allRows<{ email: string; client_id: string; refresh_token: string }>(db, `
       SELECT email, client_id, refresh_token FROM outlook_accounts
       WHERE account_type = 'short'
@@ -517,31 +559,35 @@ export async function cleanupExpired(): Promise<void> {
     `);
 
     if (toCheck.length > 0) {
+      const concurrency = Math.max(1, parseInt(getSetting('batch_concurrency', DEFAULT_SETTINGS.batch_concurrency), 10) || 5);
       let invalidCount = 0;
-      for (const { email, client_id: clientId, refresh_token: refreshToken } of toCheck) {
-        const { valid } = await checkToken(email, clientId, refreshToken);
-        db.prepare(
-          `UPDATE outlook_accounts SET token_status = ?, last_checked_at = datetime('now') WHERE email = ?`,
-        ).run(valid ? 'valid' : 'invalid', email);
-        if (!valid) invalidCount++;
-      }
+      let unknownCount = 0;
+      await runConcurrent(toCheck, concurrency, async ({ email, client_id: clientId, refresh_token: refreshToken }) => {
+        try {
+          const { status } = await checkToken(email, clientId, refreshToken);
+          if (status === 'unknown') {
+            unknownCount++;
+            db.prepare(`UPDATE outlook_accounts SET last_checked_at = datetime('now') WHERE email = ?`).run(email);
+          } else {
+            if (status === 'invalid') invalidCount++;
+            db.prepare(`UPDATE outlook_accounts SET token_status = ?, last_checked_at = datetime('now') WHERE email = ?`).run(status, email);
+          }
+        } catch (e) {
+          unknownCount++;
+          log.warn('Outlook token check errored, leaving account status untouched', { email, error: errorMessage(e) });
+        }
+      });
 
       const deleted = getRow<{ count: number }>(
         db,
         `SELECT COUNT(*) AS count FROM outlook_accounts WHERE account_type = 'short' AND token_status = 'invalid' AND assigned_inbox_id IS NULL`,
       ) ?? { count: 0 };
-      const deleteCount = deleted.count;
-      if (deleteCount > 0) {
+      if (deleted.count > 0) {
         db.prepare(`DELETE FROM outlook_accounts WHERE account_type = 'short' AND token_status = 'invalid' AND assigned_inbox_id IS NULL`).run();
-        log.info('purged invalid short-term Outlook accounts', { count: deleteCount });
+        log.info('purged invalid short-term Outlook accounts', { count: deleted.count });
       }
-      if (toCheck.length > 0) {
-        log.info('Outlook token check complete', { checked: toCheck.length, invalid: invalidCount });
-      }
+      log.info('Outlook token check complete', { checked: toCheck.length, invalid: invalidCount, unknown: unknownCount });
     }
-
-    db.prepare(`DELETE FROM fail_log WHERE datetime(reported_at) < datetime('now', ?)`).run(`-${retentionFailLogDays} days`);
-    db.prepare(`DELETE FROM activity_log WHERE datetime(created_at) < datetime('now', ?)`).run(`-${retentionActivityDays} days`);
   } catch (e) {
     log.error('cleanup failed', { error: errorMessage(e) });
   } finally {

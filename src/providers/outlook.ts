@@ -3,7 +3,7 @@ import { BaseProvider, PROVIDER, type InboxData, type Message, type MessageDetai
 import { allRows, getDb, getRow } from '../db.js';
 import { createConnection } from 'net';
 import { fetchWithTimeout, formatSender } from '../utils.js';
-import { errorMessage } from '../errors.js';
+import { errorMessage, UpstreamHttpError } from '../errors.js';
 
 const OAUTH2_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 const GRAPH_INBOX_URL = 'https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages';
@@ -28,7 +28,23 @@ interface GraphMessage {
 interface OAuthResponse {
   access_token?: string;
   refresh_token?: string;
+  error?: string;
+  error_description?: string;
 }
+
+/**
+ * The OAuth endpoint deterministically rejected the credentials (bad/expired
+ * refresh token, revoked consent). Distinct from network errors, throttling
+ * and 5xx, which say nothing about token validity.
+ */
+export class OAuthRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OAuthRejectedError';
+  }
+}
+
+export type TokenCheckStatus = 'valid' | 'invalid' | 'unknown';
 
 interface CountRow { c: number }
 
@@ -55,7 +71,12 @@ export function evictCachedToken(clientId: string, refreshToken: string): void {
   tokenCache.delete(cacheKey(clientId, refreshToken));
 }
 
-async function fetchOAuthToken(clientId: string, refreshToken: string): Promise<{ accessToken: string; newRefreshToken?: string } | null> {
+/** Test hook: module-level cache must not leak between test cases. */
+export function resetTokenCache(): void {
+  tokenCache.clear();
+}
+
+async function fetchOAuthToken(clientId: string, refreshToken: string): Promise<{ accessToken: string; newRefreshToken?: string }> {
   const body = new URLSearchParams({
     client_id: clientId,
     refresh_token: refreshToken,
@@ -67,18 +88,23 @@ async function fetchOAuthToken(clientId: string, refreshToken: string): Promise<
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: body.toString(),
   });
-  if (!res.ok) return null;
-  const data = await res.json() as OAuthResponse;
-  const accessToken = data.access_token;
-  if (!accessToken) return null;
-  return { accessToken, newRefreshToken: data.refresh_token };
+  const data = await res.json().catch(() => ({})) as OAuthResponse;
+  if (!res.ok) {
+    const detail = [data.error, data.error_description].filter(Boolean).join(': ') || `HTTP ${res.status}`;
+    // 400/401/403 carry an OAuth error verdict; anything else (429/5xx) is infrastructure.
+    if (res.status === 400 || res.status === 401 || res.status === 403) {
+      throw new OAuthRejectedError(`OAuth refresh rejected: ${detail}`);
+    }
+    throw new UpstreamHttpError(`OAuth token endpoint error: ${detail}`, res.status, res.headers.get('Retry-After'));
+  }
+  if (!data.access_token) throw new OAuthRejectedError('OAuth response missing access_token');
+  return { accessToken: data.access_token, newRefreshToken: data.refresh_token };
 }
 
-async function obtainAccessToken(clientId: string, refreshToken: string): Promise<string | null> {
+async function obtainAccessToken(clientId: string, refreshToken: string): Promise<string> {
   const cached = getCachedToken(clientId, refreshToken);
   if (cached) return cached;
   const result = await fetchOAuthToken(clientId, refreshToken);
-  if (!result) return null;
   setCachedToken(clientId, refreshToken, result.accessToken);
   return result.accessToken;
 }
@@ -303,7 +329,6 @@ export class OutlookProvider extends BaseProvider {
     const db = getDb();
     const apiType = getRow<{ api_type: string }>(db, `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
     let accessToken = await obtainAccessToken(clientId, freshToken);
-    if (!accessToken) throw new Error('OAuth2 认证失败');
 
     try {
       const result = await fetchMailsBothApis(accessToken, apiType);
@@ -315,7 +340,6 @@ export class OutlookProvider extends BaseProvider {
       if (errorMessage(e).includes('401')) {
         evictCachedToken(clientId, freshToken);
         accessToken = await obtainAccessToken(clientId, freshToken);
-        if (!accessToken) throw new Error('OAuth2 认证失败，令牌已过期');
         const result = await fetchMailsBothApis(accessToken, apiType);
         if (result.apiType && result.apiType !== apiType) {
           db.prepare(`UPDATE outlook_accounts SET api_type = ? WHERE email = ?`).run(result.apiType, email);
@@ -333,7 +357,6 @@ export class OutlookProvider extends BaseProvider {
     const apiType = getRow<{ api_type: string }>(getDb(), `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
 
     let accessToken = await obtainAccessToken(clientId, freshToken);
-    if (!accessToken) throw new Error('OAuth2 认证失败');
 
     try {
       const msg = await fetchSingleMessage(accessToken, messageId, apiType);
@@ -342,7 +365,6 @@ export class OutlookProvider extends BaseProvider {
       if (errorMessage(e).includes('401')) {
         evictCachedToken(clientId, freshToken);
         accessToken = await obtainAccessToken(clientId, freshToken);
-        if (!accessToken) throw new Error('OAuth2 认证失败，令牌已过期');
         const msg = await fetchSingleMessage(accessToken, messageId, apiType);
         return graphMsgToDetail(msg);
       }
@@ -363,29 +385,42 @@ export class OutlookProvider extends BaseProvider {
   }
 }
 
-export async function checkToken(email: string, clientId: string, refreshToken: string): Promise<{ valid: boolean; apiType: string }> {
-  const token = await obtainAccessToken(clientId, refreshToken);
-  if (!token) return { valid: false, apiType: '' };
-
+/**
+ * Never throws. 'invalid' only on a deterministic OAuth rejection or definitive
+ * 401/403 from both mail APIs; network errors, throttling and 5xx yield
+ * 'unknown' so callers never destroy accounts over an infrastructure blip.
+ */
+export async function checkToken(_email: string, clientId: string, refreshToken: string): Promise<{ status: TokenCheckStatus; apiType: string }> {
+  let token: string;
   try {
-    const res = await fetchWithTimeout(`${GRAPH_INBOX_URL}?$top=1`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) return { valid: true, apiType: 'graph' };
-  } catch {}
+    token = await obtainAccessToken(clientId, refreshToken);
+  } catch (e) {
+    return { status: e instanceof OAuthRejectedError ? 'invalid' : 'unknown', apiType: '' };
+  }
 
-  try {
-    const res = await fetchWithTimeout(`${OUTLOOK_INBOX_URL}?$top=1`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) return { valid: true, apiType: 'outlook' };
-  } catch {}
-
-  return { valid: false, apiType: '' };
+  let inconclusive = false;
+  for (const [url, apiType] of [[GRAPH_INBOX_URL, 'graph'], [OUTLOOK_INBOX_URL, 'outlook']] as const) {
+    try {
+      const res = await fetchWithTimeout(`${url}?$top=1`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) return { status: 'valid', apiType };
+      if (res.status !== 401 && res.status !== 403) inconclusive = true;
+    } catch {
+      inconclusive = true;
+    }
+  }
+  return { status: inconclusive ? 'unknown' : 'invalid', apiType: '' };
 }
 
+/**
+ * Returns the rotated credentials, or null when the endpoint accepted the token
+ * but did not rotate it. Throws OAuthRejectedError on deterministic rejection
+ * and UpstreamHttpError/network errors on infrastructure failure — callers
+ * must only mark accounts invalid on OAuthRejectedError.
+ */
 export async function renewToken(clientId: string, refreshToken: string): Promise<{ newRefreshToken: string; accessToken: string } | null> {
   const result = await fetchOAuthToken(clientId, refreshToken);
-  if (!result || !result.newRefreshToken) return null;
+  if (!result.newRefreshToken) return null;
   return { newRefreshToken: result.newRefreshToken, accessToken: result.accessToken };
 }

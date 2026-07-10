@@ -1,7 +1,14 @@
-import { createHash, createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+import { createHash, createCipheriv, createDecipheriv, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
 export function hashApiKey(key: string): string {
   return createHash('sha256').update(key).digest('hex');
+}
+
+/** Constant-time string comparison; hashing first equalizes lengths. */
+export function secureCompare(a: string, b: string): boolean {
+  const ha = createHash('sha256').update(a).digest();
+  const hb = createHash('sha256').update(b).digest();
+  return timingSafeEqual(ha, hb);
 }
 
 function deriveKey(secret: string): Buffer {

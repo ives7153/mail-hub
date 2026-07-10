@@ -27,8 +27,33 @@ interface DispatchResult {
   id: string;
   address: string;
   provider: string;
-  expiresAt?: string;
+  expiresAt: string;
   features: Record<string, boolean>;
+}
+
+// Every inbox gets an expiry so pool resources (Outlook accounts, YYDS slots)
+// can never leak permanently when a client crashes without DELETE.
+const DEFAULT_INBOX_TTL_MS = 24 * 60 * 60 * 1000;
+const MIN_DURATION_S = 60;
+const MAX_DURATION_S = 30 * 24 * 60 * 60;
+
+function sanitizeDuration(duration: unknown): number | undefined {
+  const n = Number(duration);
+  if (!Number.isFinite(n) || n <= 0) return undefined;
+  return Math.min(Math.max(Math.floor(n), MIN_DURATION_S), MAX_DURATION_S);
+}
+
+function resolveExpiresAt(providerExpiresAt: string | undefined, durationSeconds: number | undefined): string {
+  const requestedMs = durationSeconds ? Date.now() + durationSeconds * 1000 : undefined;
+  if (providerExpiresAt) {
+    const upstreamMs = Date.parse(providerExpiresAt);
+    // Upstream lifetime is authoritative; a shorter requested duration may tighten it.
+    if (requestedMs && Number.isFinite(upstreamMs)) {
+      return new Date(Math.min(upstreamMs, requestedMs)).toISOString();
+    }
+    return providerExpiresAt;
+  }
+  return new Date(requestedMs ?? Date.now() + DEFAULT_INBOX_TTL_MS).toISOString();
 }
 
 interface ProviderScore {
@@ -206,12 +231,13 @@ async function tryCreateInbox(
   domain?: string
 ): Promise<DispatchResult> {
   const id = nanoid(12);
+  const duration = sanitizeDuration(opts.duration);
   const createOpts: ProviderCreateOptions = {
     ...(domain ? { domain } : {}),
     ...(opts.for ? { for: opts.for } : {}),
     ...(opts.subdomain ? { subdomain: opts.subdomain } : {}),
     ...(opts.username ? { username: opts.username } : {}),
-    ...(opts.duration ? { duration: opts.duration } : {}),
+    ...(duration ? { duration } : {}),
     inboxId: id,
   };
   if (!rateLimiter.tryRecordCreate(providerName)) {
@@ -221,17 +247,21 @@ async function tryCreateInbox(
   try {
     inbox = await provider.createInbox(createOpts);
   } catch (error) {
-    // A create that failed deterministically (upstream 4xx other than 429)
-    // produced no inbox, so refund the slot it reserved. 429 is left consumed:
-    // recordProviderFailure sets a cooldown for it separately.
+    // A create that failed deterministically produced no inbox, so refund the
+    // slot it reserved: upstream 4xx (other than 429), or a local failure that
+    // never reached the network (status 0, non-transient — e.g. empty pool).
+    // 429 is left consumed: recordProviderFailure sets a cooldown separately.
     const status = httpStatus(error, 0);
-    if (status >= 400 && status < 500 && status !== 429) {
+    const deterministicUpstream = status >= 400 && status < 500 && status !== 429;
+    const localFailure = status === 0 && !isTransientUpstreamError(error);
+    if (deterministicUpstream || localFailure) {
       rateLimiter.refundCreate(providerName);
     }
     throw error;
   }
+  const expiresAt = resolveExpiresAt(inbox.expiresAt, duration);
   try {
-    saveInbox(id, inbox, opts.for, opts.ownerKey);
+    saveInbox(id, { ...inbox, expiresAt }, opts.for, opts.ownerKey);
   } catch (error) {
     await provider.releaseInbox(inbox, id).catch(() => {});
     throw error;
@@ -241,7 +271,7 @@ async function tryCreateInbox(
     id,
     address: inbox.address,
     provider: providerName,
-    expiresAt: inbox.expiresAt,
+    expiresAt,
     features: provider.meta.features,
   };
 }

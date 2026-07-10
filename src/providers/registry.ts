@@ -29,10 +29,11 @@ class ProviderRegistry {
 
   getEnabled(): BaseProvider[] {
     const db = getDb();
-    const rows = allRows<{ provider: string }>(db, `SELECT provider FROM provider_config WHERE enabled = 1`);
-    if (!rows.length) return this.getAll();
-    const enabledSet = new Set(rows.map((r) => r.provider));
-    return this.getAll().filter((p) => enabledSet.has(p.meta.name));
+    const rows = allRows<{ provider: string; enabled: number }>(db, `SELECT provider, enabled FROM provider_config`);
+    const enabledByName = new Map(rows.map((r) => [r.provider, r.enabled === 1]));
+    // Providers without a config row default to enabled; explicitly disabled
+    // providers stay disabled even when every provider is turned off.
+    return this.getAll().filter((p) => enabledByName.get(p.meta.name) ?? true);
   }
 
   getConfig(name: string): { enabled: boolean; priority: number; autoDispatch: boolean } {

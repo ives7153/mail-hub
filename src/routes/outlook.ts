@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { allRows, getDb, getRow, getSetting, logActivity, setSetting } from '../db.js';
-import { checkToken, renewToken } from '../providers/outlook.js';
+import { checkToken, OAuthRejectedError, renewToken } from '../providers/outlook.js';
 import { requireAdmin, type AdminEnv } from './admin.js';
 import { importDelimited } from '../import-utils.js';
 import { fetchWithTimeout, runConcurrent } from '../utils.js';
@@ -312,7 +312,7 @@ async function completeOAuthCodeExchange(session: OAuthSessionRow, code: string)
     `).run(session.client_id, exchanged.refresh_token, session.id, session.email);
 
     const checked = await checkToken(session.email, session.client_id, exchanged.refresh_token);
-    if (!checked.valid) {
+    if (checked.status === 'invalid') {
       const message = 'Refresh token saved, but token validation failed';
       db.prepare(`
         UPDATE outlook_accounts
@@ -323,6 +323,19 @@ async function completeOAuthCodeExchange(session: OAuthSessionRow, code: string)
       `).run(message, session.email);
       db.prepare(`UPDATE outlook_oauth_sessions SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?`).run(message, session.id);
       return { ok: false, message };
+    }
+    if (checked.status === 'unknown') {
+      // Token exchange itself succeeded; validation was inconclusive (network /
+      // throttling). Keep the account allocable and let the daily check settle it.
+      db.prepare(`
+        UPDATE outlook_accounts
+        SET token_status = '',
+            oauth_last_error = NULL,
+            last_checked_at = NULL
+        WHERE email = ?
+      `).run(session.email);
+      db.prepare(`UPDATE outlook_oauth_sessions SET status = 'completed', error = '', updated_at = datetime('now') WHERE id = ?`).run(session.id);
+      return { ok: true, message: 'Refresh token saved (validation deferred: upstream unreachable)' };
     }
     db.prepare(`
       UPDATE outlook_accounts
@@ -682,25 +695,30 @@ outlookRoutes.post('/outlook/check', async (c) => {
   }
 
   const checked = await runConcurrent(withToken, concurrency, async (row) => {
-    const { valid, apiType } = await checkToken(row.email, row.client_id, row.refresh_token);
+    const { status, apiType } = await checkToken(row.email, row.client_id, row.refresh_token);
+    if (status === 'unknown') {
+      db.prepare(`UPDATE outlook_accounts SET last_checked_at = datetime('now') WHERE email = ?`).run(row.email);
+      return { email: row.email, valid: false, status };
+    }
     const updates = [`token_status = ?`];
-    const params: any[] = [valid ? 'valid' : 'invalid'];
+    const params: unknown[] = [status];
     if (apiType) { updates.push(`api_type = ?`); params.push(apiType); }
-    params.push(row.email);
     updates.push(`last_checked_at = datetime('now')`);
+    params.push(row.email);
     db.prepare(`UPDATE outlook_accounts SET ${updates.join(', ')} WHERE email = ?`).run(...params);
-    return { email: row.email, valid, apiType };
+    return { email: row.email, valid: status === 'valid', status, apiType };
   });
 
   const results = [
-    ...noToken.map(row => ({ email: row.email, valid: false as const })),
+    ...noToken.map(row => ({ email: row.email, valid: false, status: 'no_token' as const })),
     ...checked,
   ];
 
   return c.json({
     checked: results.length,
-    valid: results.filter((r) => r.valid).length,
-    invalid: results.filter((r) => !r.valid).length,
+    valid: results.filter((r) => r.status === 'valid').length,
+    invalid: results.filter((r) => r.status === 'invalid' || r.status === 'no_token').length,
+    unknown: results.filter((r) => r.status === 'unknown').length,
     results,
   });
 });
@@ -724,18 +742,27 @@ outlookRoutes.post('/outlook/renew', async (c) => {
     (row.client_id && row.refresh_token ? withToken : noToken).push(row);
   }
 
-  const noTokenResults = noToken.map(row => ({ email: row.email, renewed: false }));
+  const noTokenResults = noToken.map(row => ({ email: row.email, renewed: false, status: 'no_token' }));
 
   const checked = await runConcurrent(withToken, concurrency, async (row) => {
-    const result = await renewToken(row.client_id, row.refresh_token);
-    if (result) {
-      db.prepare(
-        `UPDATE outlook_accounts SET refresh_token = ?, token_status = 'valid', token_renewed_at = datetime('now') WHERE email = ?`,
-      ).run(result.newRefreshToken, row.email);
-      return { email: row.email, renewed: true };
+    try {
+      const result = await renewToken(row.client_id, row.refresh_token);
+      if (result) {
+        db.prepare(
+          `UPDATE outlook_accounts SET refresh_token = ?, token_status = 'valid', token_renewed_at = datetime('now') WHERE email = ?`,
+        ).run(result.newRefreshToken, row.email);
+        return { email: row.email, renewed: true, status: 'renewed' };
+      }
+      // Endpoint accepted the token but did not rotate it — still a live token.
+      return { email: row.email, renewed: false, status: 'not_rotated' };
+    } catch (e) {
+      if (e instanceof OAuthRejectedError) {
+        db.prepare(`UPDATE outlook_accounts SET token_status = 'invalid' WHERE email = ?`).run(row.email);
+        return { email: row.email, renewed: false, status: 'invalid' };
+      }
+      // Network / throttling / 5xx — leave the stored status untouched.
+      return { email: row.email, renewed: false, status: 'unknown' };
     }
-    db.prepare(`UPDATE outlook_accounts SET token_status = 'invalid' WHERE email = ?`).run(row.email);
-    return { email: row.email, renewed: false };
   });
 
   const results = [...noTokenResults, ...checked];

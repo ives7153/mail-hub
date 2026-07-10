@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dispatch } from '../src/dispatcher.js';
-import { getDb } from '../src/db.js';
+import { getDb, getRow } from '../src/db.js';
 import { registry } from '../src/providers/registry.js';
 import { FakeProvider } from './helpers/fake-provider.js';
 import { rateLimiter } from '../src/rate-limiter.js';
@@ -52,6 +52,13 @@ class TransientFailingFakeProvider extends FakeProvider {
   override async createInbox(): Promise<InboxData> {
     this.createCount++;
     throw new UpstreamHttpError(`[${this.meta.name}] Create failed: 503`, 503);
+  }
+}
+
+class LocalFailingFakeProvider extends FakeProvider {
+  override async createInbox(): Promise<InboxData> {
+    this.createCount++;
+    throw new Error('pool exhausted');
   }
 }
 
@@ -302,5 +309,71 @@ describe('dispatcher provider selection', () => {
 
     registry.unregister('primary-503');
     registry.unregister('fallback-503');
+  });
+
+  it('refunds create capacity when a provider fails locally before any upstream call', async () => {
+    const provider = new LocalFailingFakeProvider({
+      name: 'local-fail',
+      displayName: 'Local Fail',
+      rateLimit: { createPerMinute: 1, pollPerMinute: 2 },
+    });
+    registry.register(provider);
+
+    await expect(dispatch({ provider: 'local-fail' })).rejects.toThrow(/pool exhausted/);
+
+    const status = rateLimiter.getCreateStatus('local-fail');
+    expect(status.currentCount).toBe(0);
+    expect(status.available).toBe(true);
+
+    registry.unregister('local-fail');
+  });
+
+  it('dispatches nothing when every provider is explicitly disabled', async () => {
+    const provider = new FakeProvider();
+    registry.register(provider);
+    getDb().prepare(`UPDATE provider_config SET enabled = 0`).run();
+
+    await expect(dispatch({})).rejects.toThrow(/All providers exhausted/);
+    expect(provider.createCount).toBe(0);
+
+    registry.unregister('fake');
+  });
+});
+
+describe('inbox expiry', () => {
+  it('stores provider expiry, tightens it with a requested duration, and defaults to 24h', async () => {
+    const withExpiry = new FakeProvider({
+      name: 'exp-provider',
+      displayName: 'With Expiry',
+      rateLimit: { createPerMinute: 0, pollPerMinute: 2 },
+    });
+    const withoutExpiry = new FakeProvider({
+      name: 'noexp-provider',
+      displayName: 'No Expiry',
+      expiresAt: null,
+      rateLimit: { createPerMinute: 0, pollPerMinute: 2 },
+    });
+    registry.register(withExpiry);
+    registry.register(withoutExpiry);
+    const db = getDb();
+
+    const upstream = await dispatch({ provider: 'exp-provider' });
+    expect(upstream.expiresAt).toBe('2099-01-01T00:00:00.000Z');
+
+    const tightened = await dispatch({ provider: 'exp-provider', duration: 600 });
+    const tightenedMs = Date.parse(tightened.expiresAt);
+    expect(tightenedMs).toBeGreaterThan(Date.now() + 500_000);
+    expect(tightenedMs).toBeLessThan(Date.now() + 700_000);
+
+    const defaulted = await dispatch({ provider: 'noexp-provider' });
+    const defaultedMs = Date.parse(defaulted.expiresAt);
+    expect(defaultedMs).toBeGreaterThan(Date.now() + 23 * 3_600_000);
+    expect(defaultedMs).toBeLessThan(Date.now() + 25 * 3_600_000);
+
+    const row = getRow<{ expires_at: string | null }>(db, `SELECT expires_at FROM inboxes WHERE id = ?`, defaulted.id);
+    expect(row?.expires_at).toBe(defaulted.expiresAt);
+
+    registry.unregister('exp-provider');
+    registry.unregister('noexp-provider');
   });
 });
