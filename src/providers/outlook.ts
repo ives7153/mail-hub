@@ -121,7 +121,9 @@ async function fetchMailsGraph(accessToken: string, folderUrl: string, count = 2
   if (res.status === 401) throw new Error('API 401');
   if (!res.ok) return [];
   const data = await res.json() as { value?: GraphMessage[] };
-  return data.value || [];
+  // Normalize immediately: the Outlook REST API returns PascalCase fields, and
+  // downstream dedup/sort must never see un-normalized ids/timestamps.
+  return (data.value || []).map(normalizeMessage);
 }
 
 async function fetchMailsBothApis(accessToken: string, apiType: string, count = 20): Promise<{ messages: GraphMessage[]; apiType: string }> {
@@ -170,7 +172,7 @@ async function fetchSingleMessage(accessToken: string, messageId: string, apiTyp
   for (const url of urls) {
     const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${accessToken}` } });
     if (res.status === 401) throw new Error('API 401');
-    if (res.ok) return res.json() as Promise<GraphMessage>;
+    if (res.ok) return normalizeMessage(await res.json());
   }
   throw new Error('无法获取邮件详情');
 }
@@ -194,26 +196,22 @@ function normalizeMessage(msg: any): GraphMessage {
   };
 }
 
-function graphMsgToMessage(msg: GraphMessage): Message {
-  const normalized = normalizeMessage(msg);
-  const sender = formatSender(normalized.from?.emailAddress || {});
+function graphMsgToMessage(normalized: GraphMessage): Message {
   return {
     id: normalized.id,
-    from: sender,
+    from: formatSender(normalized.from?.emailAddress || {}),
     subject: normalized.subject || '',
     excerpt: normalized.bodyPreview || '',
     receivedAt: normalized.receivedDateTime || '',
   };
 }
 
-function graphMsgToDetail(msg: GraphMessage): MessageDetail {
-  const normalized = normalizeMessage(msg);
-  const base = graphMsgToMessage(normalized);
+function graphMsgToDetail(normalized: GraphMessage): MessageDetail {
   const bodyObj = normalized.body || {};
   const content = bodyObj.content || '';
   const isHtml = bodyObj.contentType === 'html';
   return {
-    ...base,
+    ...graphMsgToMessage(normalized),
     text: isHtml ? '' : content,
     html: isHtml ? content : '',
   };
@@ -315,11 +313,6 @@ export class OutlookProvider extends BaseProvider {
     });
 
     return allocate();
-  }
-
-  markAssigned(email: string, inboxId: string): void {
-    const db = getDb();
-    db.prepare(`UPDATE outlook_accounts SET assigned_inbox_id = ? WHERE email = ?`).run(inboxId, email);
   }
 
   async getMessages(inbox: InboxData): Promise<Message[]> {

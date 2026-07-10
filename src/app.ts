@@ -108,7 +108,7 @@ Response 201:
     "id": "abc123",
     "address": "random@tmpmail.org",
     "provider": "mailtm",
-    "expiresAt": "2025-01-01T01:00:00Z",  // may be null
+    "expiresAt": "2025-01-01T01:00:00Z",  // always set; defaults to 24h when neither provider nor "duration" specify one
     "features": { "pollInbox": true, "attachments": false, ... }
   }
 

@@ -374,16 +374,10 @@ inboxRoutes.delete('/inbox/:id', async (c) => {
   }
 
   const inbox = parseStoredInbox(row);
-  const provider = registry.get(inbox.provider);
-
-  if (provider?.deleteInbox) {
-    try {
-      await releaseInboxResources(inbox, { deleteExternal: true });
-    } catch (error) {
-      log.warn('failed to release inbox resources on delete', { inboxId: id, provider: inbox.provider, error: errorMessage(error) });
-    }
-  } else {
-    await releaseInboxResources(inbox, { deleteExternal: false });
+  try {
+    await releaseInboxResources(inbox, { deleteExternal: true });
+  } catch (error) {
+    log.warn('failed to release inbox resources on delete', { inboxId: id, provider: inbox.provider, error: errorMessage(error) });
   }
 
   logActivity('amber', `Closed inbox ${inbox.address} (${inbox.provider})`);

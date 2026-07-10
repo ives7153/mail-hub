@@ -316,9 +316,7 @@ export async function dispatch(opts: DispatchOptions): Promise<DispatchResult> {
       throw new Error(`Provider '${opts.provider}' is rate-limited`);
     }
     const blockedDomains = opts.for ? getBlockedDomains(opts.for) : new Set<string>();
-    const domain = opts.domain
-      ? await selectAllowedDomain(p, opts.domain, blockedDomains, opts.for)
-      : await selectAllowedDomain(p, undefined, blockedDomains, opts.for);
+    const domain = await selectAllowedDomain(p, opts.domain, blockedDomains, opts.for);
 
     try {
       return await tryCreateInbox(p, p.meta.name, opts, domain);
