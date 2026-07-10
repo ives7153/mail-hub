@@ -53,32 +53,53 @@ async function connectImap(account: ImapAccount): Promise<ImapFlow> {
   return client;
 }
 
-interface PoolEntry { client: ImapFlow; timer: ReturnType<typeof setTimeout>; }
+interface PoolEntry { clientPromise: Promise<ImapFlow>; timer: ReturnType<typeof setTimeout>; }
 const pool = new Map<string, PoolEntry>();
 const IDLE_MS = 5 * 60 * 1000;
+// A busy catch-all mailbox can match hundreds of UIDs; poll only the newest.
+const POLL_FETCH_LIMIT = 20;
 
-function evictClient(id: string): void {
-  const entry = pool.get(id);
-  if (!entry) return;
-  clearTimeout(entry.timer);
+function evictClient(id: string, entry?: PoolEntry): void {
+  const current = pool.get(id);
+  if (!current) return;
+  // Entry-matched eviction: an async error callback must not kill a newer
+  // client that has since replaced the failed one.
+  if (entry && current !== entry) return;
+  clearTimeout(current.timer);
   pool.delete(id);
-  entry.client.logout().catch((error: unknown) => {
-    logIgnoredError(log, 'IMAP pooled client logout failed', error, { accountId: id });
-  });
+  current.clientPromise
+    .then((client) => client.logout())
+    .catch((error: unknown) => {
+      logIgnoredError(log, 'IMAP pooled client logout failed', error, { accountId: id });
+    });
 }
 
 async function getPooledClient(account: ImapAccount): Promise<ImapFlow> {
   const existing = pool.get(account.id);
   if (existing) {
     clearTimeout(existing.timer);
-    existing.timer = setTimeout(() => evictClient(account.id), IDLE_MS);
-    return existing.client;
+    existing.timer = setTimeout(() => evictClient(account.id, existing), IDLE_MS);
+    return existing.clientPromise;
   }
-  const client = await connectImap(account);
-  client.once('error', () => evictClient(account.id));
-  const timer = setTimeout(() => evictClient(account.id), IDLE_MS);
-  pool.set(account.id, { client, timer });
-  return client;
+  // The entry is registered synchronously (holding a promise) so concurrent
+  // callers share one connection instead of racing to open duplicates.
+  const entry: PoolEntry = {
+    clientPromise: connectImap(account).then((client) => {
+      client.once('error', () => evictClient(account.id, entry));
+      return client;
+    }),
+    timer: setTimeout(() => evictClient(account.id, entry), IDLE_MS),
+  };
+  pool.set(account.id, entry);
+  try {
+    return await entry.clientPromise;
+  } catch (e) {
+    if (pool.get(account.id) === entry) {
+      clearTimeout(entry.timer);
+      pool.delete(account.id);
+    }
+    throw e;
+  }
 }
 
 export class ImapProvider extends BaseProvider {
@@ -141,15 +162,11 @@ export class ImapProvider extends BaseProvider {
         const toAddr = inbox.address;
         const uids = await client.search({ to: toAddr }, { uid: true });
         if (!uids || uids.length === 0) return [];
+        const recent = uids.slice(-POLL_FETCH_LIMIT);
         const messages: Message[] = [];
-        for (const uid of uids) {
-          const fetched = await client.fetchOne(String(uid), {
-            envelope: true,
-            bodyStructure: true,
-          }, { uid: true });
-          if (!fetched) continue;
+        for await (const fetched of client.fetch(recent, { envelope: true }, { uid: true })) {
           messages.push({
-            id: String(uid),
+            id: String(fetched.uid),
             from: fetched.envelope?.from?.[0]?.address ?? '',
             subject: fetched.envelope?.subject ?? '',
             excerpt: '',

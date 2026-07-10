@@ -42,7 +42,10 @@ export class FakeProvider extends BaseProvider {
     };
   }
 
+  getDomainsCount = 0;
+
   async getDomains(): Promise<string[]> {
+    this.getDomainsCount++;
     return this.domains;
   }
 

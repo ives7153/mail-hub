@@ -146,6 +146,9 @@ export class TemplateProvider extends BaseProvider {
   private cfg: TemplateProviderConfig;
   private domainCache: { domains: string[]; expiresAt: number } | null = null;
   private static readonly DOMAIN_CACHE_MS = 5 * 60_000;
+  // Failed fetches are cached briefly so a dead upstream costs one timeout
+  // per minute instead of stalling every dispatch.
+  private static readonly DOMAIN_FAILURE_CACHE_MS = 60_000;
 
   constructor(cfg: TemplateProviderConfig) {
     super();
@@ -216,8 +219,18 @@ export class TemplateProvider extends BaseProvider {
     const rawBody = domains.body ? interpolateBody(domains.body, {}) : undefined;
     const serialized = rawBody ? serializeBody(rawBody, domains.bodyType) : undefined;
     if (serialized) headers['Content-Type'] = serialized.contentType;
-    const res = await fetchWithTimeout(url, { method: domains.method || 'GET', headers, body: serialized?.body });
-    if (!res.ok) return [];
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(url, { method: domains.method || 'GET', headers, body: serialized?.body });
+    } catch (error) {
+      log.warn('template provider domain fetch failed', { provider: this.cfg.name, error: errorMessage(error) });
+      this.domainCache = { domains: [], expiresAt: Date.now() + TemplateProvider.DOMAIN_FAILURE_CACHE_MS };
+      return [];
+    }
+    if (!res.ok) {
+      this.domainCache = { domains: [], expiresAt: Date.now() + TemplateProvider.DOMAIN_FAILURE_CACHE_MS };
+      return [];
+    }
     const data = await res.json();
     let items: unknown[] = [];
     const resolvedItems = resolvePath(data, domains.resultPath || '$root');
@@ -326,7 +339,7 @@ export class TemplateProvider extends BaseProvider {
     const data = await res.json();
     const items = resolvePath(data, messages.resultPath || '$root');
     if (!Array.isArray(items)) return [];
-    this._lastMessagesByInbox.set(inbox.address, items);
+    this.cacheMessages(inbox.address, items);
     return items.map((item) => ({
       id: String(resolvePath(item, messages.itemMapping.id) || ''),
       from: String(resolvePath(item, messages.itemMapping.from) || ''),
@@ -337,6 +350,18 @@ export class TemplateProvider extends BaseProvider {
   }
 
   private _lastMessagesByInbox = new Map<string, unknown[]>();
+  private static readonly MESSAGE_CACHE_MAX = 200;
+
+  /** LRU-capped: unbounded growth would leak memory over a long-running process. */
+  private cacheMessages(address: string, items: unknown[]): void {
+    const cache = this._lastMessagesByInbox;
+    cache.delete(address);
+    cache.set(address, items);
+    if (cache.size > TemplateProvider.MESSAGE_CACHE_MAX) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
+  }
 
   async getMessage(inbox: InboxData, messageId: string): Promise<MessageDetail> {
     const { messageDetail, messages } = this.cfg;

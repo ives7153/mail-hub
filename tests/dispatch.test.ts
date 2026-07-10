@@ -328,6 +328,18 @@ describe('dispatcher provider selection', () => {
     registry.unregister('local-fail');
   });
 
+  it('fetches domains once per auto-dispatch, reusing the scoring result', async () => {
+    const provider = new FakeProvider({ rateLimit: { createPerMinute: 10, pollPerMinute: 2 } });
+    const db = getDb();
+    db.prepare(`UPDATE provider_config SET enabled = 0`).run();
+    registry.register(provider);
+
+    await expect(dispatch({})).resolves.toMatchObject({ provider: 'fake' });
+    expect(provider.getDomainsCount).toBe(1);
+
+    registry.unregister('fake');
+  });
+
   it('dispatches nothing when every provider is explicitly disabled', async () => {
     const provider = new FakeProvider();
     registry.register(provider);

@@ -1,6 +1,77 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { getDb } from '../src/db.js';
 import { ImapProvider } from '../src/providers/imap.js';
+import type { InboxData } from '../src/providers/base.js';
+
+const imapMockState = vi.hoisted(() => ({
+  connectCount: 0,
+  searchResult: [] as number[],
+  fetchRanges: [] as number[][],
+}));
+
+vi.mock('imapflow', () => {
+  class FakeImapFlow {
+    async connect(): Promise<void> {
+      imapMockState.connectCount++;
+    }
+    once(): void {}
+    async logout(): Promise<void> {}
+    async getMailboxLock(): Promise<{ release(): void }> {
+      return { release() {} };
+    }
+    async search(): Promise<number[]> {
+      return [...imapMockState.searchResult];
+    }
+    async *fetch(range: number[]): AsyncGenerator<{ uid: number; envelope: { from: { address: string }[]; subject: string; date: Date } }> {
+      imapMockState.fetchRanges.push(range);
+      for (const uid of range) {
+        yield { uid, envelope: { from: [{ address: 'sender@example.test' }], subject: `mail-${uid}`, date: new Date() } };
+      }
+    }
+    async fetchOne(): Promise<undefined> {
+      return undefined;
+    }
+    async mailboxOpen(): Promise<void> {}
+  }
+  return { ImapFlow: FakeImapFlow };
+});
+
+function imapInbox(accountId: string, address: string): InboxData {
+  return { address, authData: { imapAccountId: accountId, username: 'x', domain: 'example.com' }, provider: 'imap', apiBase: '' };
+}
+
+describe('ImapProvider polling', () => {
+  it('fetches only the newest messages in one batched fetch call', async () => {
+    getDb().prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('pool-limit', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
+    ).run();
+    imapMockState.searchResult = Array.from({ length: 30 }, (_, i) => i + 1);
+    imapMockState.fetchRanges = [];
+
+    const p = new ImapProvider();
+    const messages = await p.getMessages(imapInbox('pool-limit', 'x@example.com'));
+
+    expect(messages).toHaveLength(20);
+    expect(messages[0].id).toBe('11');
+    expect(messages[19].id).toBe('30');
+    expect(imapMockState.fetchRanges).toHaveLength(1);
+    expect(imapMockState.fetchRanges[0]).toHaveLength(20);
+  });
+
+  it('shares one connection across concurrent polls of the same account', async () => {
+    getDb().prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('pool-share', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
+    ).run();
+    imapMockState.searchResult = [1];
+    const before = imapMockState.connectCount;
+
+    const p = new ImapProvider();
+    const inbox = imapInbox('pool-share', 'y@example.com');
+    await Promise.all([p.getMessages(inbox), p.getMessages(inbox)]);
+
+    expect(imapMockState.connectCount - before).toBe(1);
+  });
+});
 
 describe('ImapProvider', () => {
   it('has correct meta', () => {

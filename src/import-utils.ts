@@ -22,23 +22,27 @@ export function importDelimited(
   const placeholders = columns.map(() => '?').join(', ');
   const stmt = db.prepare(`INSERT OR IGNORE INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})`);
 
-  for (const line of lines) {
-    const parts = line.split('----');
-    const result = rowParser(parts, line);
-    if ('skip' in result) {
-      errors.push(result.reason);
-      skipped++;
-      continue;
+  // One transaction for the whole import: per-line autocommit means one fsync
+  // per line, which turns large imports into minutes of disk waiting.
+  db.transaction(() => {
+    for (const line of lines) {
+      const parts = line.split('----');
+      const result = rowParser(parts, line);
+      if ('skip' in result) {
+        errors.push(result.reason);
+        skipped++;
+        continue;
+      }
+      try {
+        const info = stmt.run(...result.values);
+        if (info.changes > 0) imported++;
+        else duplicated++;
+      } catch (e) {
+        errors.push(errorMessage(e));
+        skipped++;
+      }
     }
-    try {
-      const info = stmt.run(...result.values);
-      if (info.changes > 0) imported++;
-      else duplicated++;
-    } catch (e) {
-      errors.push(errorMessage(e));
-      skipped++;
-    }
-  }
+  })();
 
   return { imported, duplicated, skipped, errors };
 }

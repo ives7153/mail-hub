@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { getDb, getRow } from '../src/db.js';
 import { registry } from '../src/providers/registry.js';
 import { BaseProvider, type InboxData, type Message, type MessageDetail, type ProviderMeta } from '../src/providers/base.js';
-import type { TemplateProviderConfig } from '../src/providers/template-provider.js';
+import { TemplateProvider, type TemplateProviderConfig } from '../src/providers/template-provider.js';
 import { app, authHeaders, jsonHeaders, jsonOf } from './helpers/http.js';
 
 const validConfig = {
@@ -250,5 +250,34 @@ describe('template-provider CRUD', () => {
       });
       expect(res.status).toBe(404);
     });
+  });
+});
+
+describe('template provider domain failure caching', () => {
+  it('caches a failed domain fetch briefly instead of refetching every call', async () => {
+    const provider = new TemplateProvider({
+      name: 'negcache-tmpl',
+      displayName: 'NegCache',
+      tier: 'free',
+      trustLevel: 1,
+      rateLimit: { createPerMinute: 10, pollPerMinute: 10 },
+      retention: 'test',
+      features: { customUsername: true, pollInbox: true, attachments: false },
+      apiBase: 'https://negcache.example.test',
+      auth: { type: 'none' },
+      domains: { mode: 'endpoint', path: '/domains' },
+      create: { path: '/accounts', method: 'POST', responseMapping: { address: 'address', authData: {} } },
+      messages: { path: '/messages', authFrom: 'inbox', itemMapping: { id: 'id', from: 'from', subject: 'subject', excerpt: 'excerpt', receivedAt: 'receivedAt' } },
+      messageDetail: { path: '/messages/{{messageId}}', authFrom: 'inbox', responseMapping: { id: 'id', from: 'from', subject: 'subject', receivedAt: 'receivedAt' } },
+    });
+    const fetchMock = vi.fn(async () => new Response('nope', { status: 500 }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await expect(provider.getDomains()).resolves.toEqual([]);
+      await expect(provider.getDomains()).resolves.toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

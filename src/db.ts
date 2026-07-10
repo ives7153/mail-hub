@@ -190,6 +190,10 @@ export function initDb(): Database.Database {
 
   db = new Database(config.dbPath);
   db.pragma('journal_mode = WAL');
+  // Standard WAL pairing: syncs at checkpoint instead of every commit. Worst
+  // case on OS crash is losing the last moments of writes; scheduled backups
+  // cover that, and all data here is re-importable.
+  db.pragma('synchronous = NORMAL');
 
   db.exec(SCHEMA);
 
@@ -221,6 +225,7 @@ export function initDb(): Database.Database {
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_inboxes_status ON inboxes(status);
+    CREATE INDEX IF NOT EXISTS idx_inboxes_provider_address ON inboxes(provider, address);
     CREATE INDEX IF NOT EXISTS idx_inboxes_owner ON inboxes(owner_key);
     CREATE INDEX IF NOT EXISTS idx_inboxes_service ON inboxes(target_service);
     CREATE INDEX IF NOT EXISTS idx_inboxes_expires ON inboxes(expires_at);

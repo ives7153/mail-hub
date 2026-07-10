@@ -61,6 +61,15 @@ export class YydsProvider extends BaseProvider {
   };
 
   private domainCache: { domains: string[]; expiresAt: number } | null = null;
+  // After an upstream failure the DB fallback is memoized briefly so a dead
+  // upstream costs one timeout per minute instead of stalling every dispatch.
+  private static readonly DOMAIN_FAILURE_CACHE_MS = 60_000;
+
+  private fallbackToCachedDomains(): string[] {
+    const fallback = this.readCachedDomains();
+    this.domainCache = { domains: fallback, expiresAt: Date.now() + YydsProvider.DOMAIN_FAILURE_CACHE_MS };
+    return fallback;
+  }
 
   private readCachedDomains(): string[] {
     const rows = allRows<{ domain: string }>(getDb(),
@@ -96,18 +105,18 @@ export class YydsProvider extends BaseProvider {
 
     try {
       const res = await fetchWithTimeout(`${API_BASE}/domains`);
-      if (!res.ok) return this.readCachedDomains();
+      if (!res.ok) return this.fallbackToCachedDomains();
       const json = await res.json() as YydsResponse<YydsDomain[]>;
-      if (!json.success || !json.data) return this.readCachedDomains();
+      if (!json.success || !json.data) return this.fallbackToCachedDomains();
       const domains = json.data
         .filter((d) => d.isPublic && d.isVerified && d.isMxValid)
         .map((d) => d.domain)
         .filter((domain): domain is string => Boolean(domain));
       if (domains.length > 0) this.writeCachedDomains(domains);
-      return domains.length > 0 ? [...new Set(domains)] : this.readCachedDomains();
+      return domains.length > 0 ? [...new Set(domains)] : this.fallbackToCachedDomains();
     } catch (error) {
       log.warn('failed to refresh YYDS domains, using cache', { error: errorMessage(error) });
-      return this.readCachedDomains();
+      return this.fallbackToCachedDomains();
     }
   }
 

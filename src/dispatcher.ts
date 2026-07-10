@@ -3,7 +3,10 @@ import { registry } from './providers/registry.js';
 import { rateLimiter } from './rate-limiter.js';
 import { allRows, getDb, getRow } from './db.js';
 import { PROVIDER, type ProviderName, type BaseProvider, type InboxData } from './providers/base.js';
+import { createLogger } from './logger.js';
 import { errorMessage, httpStatus, isTransientUpstreamError, retryAfterHeader } from './errors.js';
+
+const log = createLogger('dispatcher');
 
 const PROVIDER_PAIRS: Partial<Record<string, ProviderName[]>> = {
   [PROVIDER.MAILTM]: [PROVIDER.MAILGW],
@@ -60,6 +63,23 @@ interface ProviderScore {
   provider: BaseProvider;
   score: number;
   reason: string;
+  /** Unblocked domains fetched during scoring; undefined = not fetched (reuse requires a live fetch). */
+  unblockedDomains?: string[];
+}
+
+// Scoring runs getDomains across all providers; one slow upstream must not
+// stall every inbox creation, so scoring caps each fetch at 5s and the
+// creation path reuses whatever scoring already fetched.
+const SCORING_DOMAINS_TIMEOUT_MS = 5000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
 }
 
 const domainCursor = new Map<string, number>();
@@ -157,14 +177,13 @@ async function scoreProviders(
   needPolling: boolean,
   targetService?: string
 ): Promise<ProviderScore[]> {
-  const scored: ProviderScore[] = [];
   const allStats = getAllProviderStats();
 
-  for (const p of providers) {
-    if (needPolling && !p.meta.features.pollInbox) continue;
+  const scored = await Promise.all(providers.map(async (p): Promise<ProviderScore | null> => {
+    if (needPolling && !p.meta.features.pollInbox) return null;
 
     const cfg = registry.getConfig(p.meta.name);
-    if (!cfg.autoDispatch) continue;
+    if (!cfg.autoDispatch) return null;
     const stats = allStats.get(p.meta.name) ?? { success: 0, fail: 0 };
     const rateOk = rateLimiter.isCreateAvailable(p.meta.name);
 
@@ -174,27 +193,31 @@ async function scoreProviders(
     score -= Math.min(stats.fail, 10) * 5;
 
     let domains: string[] = [];
-    let unblocked: string[] = [];
+    let unblockedDomains: string[] | undefined;
     if (rateOk && !canCreateWithoutPreselectedDomain(p)) {
       try {
-        domains = await p.getDomains(targetService ? { for: targetService } : undefined);
+        domains = await withTimeout(
+          p.getDomains(targetService ? { for: targetService } : undefined),
+          SCORING_DOMAINS_TIMEOUT_MS,
+        );
+        unblockedDomains = domains.filter((d) => !isDomainBlocked(d, blockedDomains));
+        if (unblockedDomains.length > 0) score += 20;
       } catch (e) {
-        console.warn(`[dispatcher] getDomains failed for ${p.meta.name}:`, (e as Error)?.message);
+        log.warn('getDomains failed during scoring', { provider: p.meta.name, error: errorMessage(e) });
       }
-      unblocked = domains.filter((d) => !isDomainBlocked(d, blockedDomains));
-      if (unblocked.length > 0) score += 20;
     }
 
     let reason = `trust=${p.meta.trustLevel}`;
     if (!rateOk) reason += ', rate-limited';
-    if (unblocked.length === 0 && domains.length > 0) reason += ', all-domains-blocked';
+    if (unblockedDomains?.length === 0 && domains.length > 0) reason += ', all-domains-blocked';
     if (stats.fail > 0) reason += `, fails=${stats.fail}`;
 
-    scored.push({ provider: p, score, reason });
-  }
+    return { provider: p, score, reason, unblockedDomains };
+  }));
 
-  scored.sort((a, b) => b.score - a.score);
-  return scored;
+  return scored
+    .filter((entry): entry is ProviderScore => entry !== null)
+    .sort((a, b) => b.score - a.score);
 }
 
 function saveInbox(
@@ -309,7 +332,7 @@ export async function dispatch(opts: DispatchOptions): Promise<DispatchResult> {
   const scored = await scoreProviders(enabledProviders, blockedDomains, needPolling, opts.for);
   const errors: string[] = [];
 
-  for (const { provider: p, reason } of scored) {
+  for (const { provider: p, reason, unblockedDomains } of scored) {
     if (!rateLimiter.isCreateAvailable(p.meta.name)) {
       const pairs = PROVIDER_PAIRS[p.meta.name] ?? [];
       for (const pairName of pairs) {
@@ -340,8 +363,13 @@ export async function dispatch(opts: DispatchOptions): Promise<DispatchResult> {
     try {
       let domain: string | undefined;
       if (!canCreateWithoutPreselectedDomain(p)) {
-        let domains = await p.getDomains(opts.for ? { for: opts.for } : undefined);
-        domains = domains.filter((d) => !isDomainBlocked(d, blockedDomains));
+        // Reuse the domains scoring already fetched; fetch only when scoring
+        // could not (rate-limited then, or the scoring fetch failed).
+        let domains = unblockedDomains;
+        if (domains === undefined) {
+          domains = (await p.getDomains(opts.for ? { for: opts.for } : undefined))
+            .filter((d) => !isDomainBlocked(d, blockedDomains));
+        }
 
         if (domains.length === 0 && p.meta.type !== 'alias') {
           errors.push(`${p.meta.name}: all domains blocked`);
