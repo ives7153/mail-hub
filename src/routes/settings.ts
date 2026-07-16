@@ -2,7 +2,9 @@ import { Hono } from 'hono';
 import { existsSync, statSync } from 'fs';
 import { allRows, DEFAULT_SETTINGS, backupDb, deleteBackup, getDb, getSetting, listBackups, setSetting } from '../db.js';
 import { config } from '../config.js';
+import { errorMessage } from '../errors.js';
 import { requireAdmin, type AdminEnv } from './admin.js';
+import { checkForUpdates } from '../update-check.js';
 import { APP_VERSION } from '../version.js';
 import { rescheduleBackup } from '../backup-scheduler.js';
 
@@ -80,4 +82,12 @@ settingsRoutes.get('/admin/system-info', (c) => {
     backupEnabled: getSetting('backup_enabled', DEFAULT_SETTINGS.backup_enabled),
     backupIntervalHours: getSetting('backup_interval_hours', DEFAULT_SETTINGS.backup_interval_hours),
   });
+});
+
+settingsRoutes.get('/admin/update-check', async (c) => {
+  try {
+    return c.json(await checkForUpdates());
+  } catch (error) {
+    return c.json({ error: errorMessage(error) }, 502);
+  }
 });
