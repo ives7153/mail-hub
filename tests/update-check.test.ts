@@ -73,13 +73,36 @@ describe('update checker', () => {
     expect((await check()).updateAvailable).toBe(false);
   });
 
-  it.each([403, 429])('reports GitHub rate limiting for status %s', async (status) => {
+  it.each([403, 429])('falls back to the GitHub tag feed for status %s', async (status) => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response('', { status }))
+      .mockResolvedValueOnce(new Response(`
+        <feed>
+          <id>tag:github.com,2008:https://github.com/ydddp/mail-hub/releases</id>
+          <entry><id>tag:github.com,2008:Repository/123/v0.9.4</id></entry>
+          <entry><id>tag:github.com,2008:Repository/123/v0.10.0</id></entry>
+        </feed>
+      `, { status: 200 }));
     const check = createUpdateChecker({
       currentVersion: '0.9.4',
-      fetcher: async () => new Response('', { status }),
+      fetcher,
     });
 
-    await expect(check()).rejects.toThrow('GitHub rate limit');
+    expect(await check()).toMatchObject({
+      latestVersion: '0.10.0',
+      updateAvailable: true,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1][0]).toBe('https://github.com/ydddp/mail-hub/tags.atom');
+  });
+
+  it('reports a failed GitHub tag-feed fallback', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response('', { status: 403 }))
+      .mockResolvedValueOnce(new Response('', { status: 503 }));
+    const check = createUpdateChecker({ currentVersion: '0.9.4', fetcher });
+
+    await expect(check()).rejects.toThrow('GitHub tag feed returned status 503');
   });
 
   it('reports other upstream failures without exposing the response body', async () => {
