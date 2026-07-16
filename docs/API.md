@@ -1288,11 +1288,12 @@ Queries the Mail Hub GitHub repository for the highest stable `vX.Y.Z` tag and c
   "currentVersion": "0.9.4",
   "latestVersion": "0.9.5",
   "updateAvailable": true,
-  "checkedAt": "2026-07-17T00:00:00.000Z"
+  "checkedAt": "2026-07-17T00:00:00.000Z",
+  "source": "github-api"
 }
 ```
 
-GitHub request failures return `502`.
+The GitHub REST query follows tag pagination. If anonymous REST access is rate-limited, the endpoint falls back to GitHub's recent tag Atom feed and returns `"source": "github-feed"`; a no-update result from that fallback is best-effort because the feed exposes a finite recent window. GitHub request failures return `502`.
 
 ---
 

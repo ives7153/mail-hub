@@ -10,6 +10,7 @@ interface UpdateCheckResponse {
   latestVersion: string;
   updateAvailable: boolean;
   checkedAt: string;
+  source: 'github-api' | 'github-feed';
 }
 
 describe('GET /api/admin/update-check', () => {
@@ -30,6 +31,7 @@ describe('GET /api/admin/update-check', () => {
       latestVersion: '0.10.0',
       updateAvailable: true,
       checkedAt: '2026-07-17T00:00:00.000Z',
+      source: 'github-api',
     };
     checkForUpdates.mockResolvedValue(expected);
 

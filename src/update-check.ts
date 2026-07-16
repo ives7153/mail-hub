@@ -16,6 +16,7 @@ export interface UpdateCheckResult {
   latestVersion: string;
   updateAvailable: boolean;
   checkedAt: string;
+  source: 'github-api' | 'github-feed';
 }
 
 export interface UpdateCheckerOptions {
@@ -25,9 +26,15 @@ export interface UpdateCheckerOptions {
   cacheTtlMs?: number;
 }
 
-function parseStableVersion(value: unknown): { normalized: string; tuple: VersionTuple } | null {
+function parseStableVersion(
+  value: unknown,
+  requireTagPrefix = false,
+): { normalized: string; tuple: VersionTuple } | null {
   if (typeof value !== 'string') return null;
-  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(value.trim());
+  const pattern = requireTagPrefix
+    ? /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+    : /^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+  const match = pattern.exec(value.trim());
   if (!match) return null;
   const tuple = match.slice(1).map(Number) as unknown as VersionTuple;
   if (tuple.some(part => !Number.isSafeInteger(part))) return null;
@@ -36,6 +43,26 @@ function parseStableVersion(value: unknown): { normalized: string; tuple: Versio
 
 export function normalizeStableVersion(value: unknown): string | null {
   return parseStableVersion(value)?.normalized ?? null;
+}
+
+function normalizeStableTag(value: unknown): string | null {
+  return parseStableVersion(value, true)?.normalized ?? null;
+}
+
+function highestVersion(versions: string[], emptyMessage: string): string {
+  if (versions.length === 0) throw new Error(emptyMessage);
+  return versions.reduce((latest, candidate) => (
+    compareStableVersions(candidate, latest) > 0 ? candidate : latest
+  ));
+}
+
+function stableVersionsFromTagsPayload(payload: unknown): string[] {
+  if (!Array.isArray(payload)) throw new Error('invalid GitHub tags response');
+  return payload
+    .map(tag => tag && typeof tag === 'object'
+      ? normalizeStableTag((tag as { name?: unknown }).name)
+      : null)
+    .filter((value): value is string => value !== null);
 }
 
 export function compareStableVersions(left: string, right: string): number {
@@ -51,30 +78,31 @@ export function compareStableVersions(left: string, right: string): number {
 }
 
 export function findLatestStableVersion(payload: unknown): string {
-  if (!Array.isArray(payload)) throw new Error('invalid GitHub tags response');
-
-  const versions = payload
-    .map(tag => tag && typeof tag === 'object'
-      ? normalizeStableVersion((tag as { name?: unknown }).name)
-      : null)
-    .filter((value): value is string => value !== null);
-
-  if (versions.length === 0) throw new Error('no stable version tag found');
-  return versions.reduce((latest, candidate) => (
-    compareStableVersions(candidate, latest) > 0 ? candidate : latest
-  ));
+  return highestVersion(stableVersionsFromTagsPayload(payload), 'no stable version tag found');
 }
 
 function findLatestStableVersionFromAtom(xml: string): string {
   const versions = Array.from(
     xml.matchAll(/<id>[^<]*\/(v?\d+\.\d+\.\d+)<\/id>/g),
-    match => normalizeStableVersion(match[1]),
+    match => normalizeStableTag(match[1]),
   ).filter((value): value is string => value !== null);
 
-  if (versions.length === 0) throw new Error('invalid GitHub tag feed response');
-  return versions.reduce((latest, candidate) => (
-    compareStableVersions(candidate, latest) > 0 ? candidate : latest
-  ));
+  return highestVersion(versions, 'invalid GitHub tag feed response');
+}
+
+function nextGitHubPage(response: Response): string | null {
+  const header = response.headers.get('link');
+  if (!header) return null;
+  for (const part of header.split(',')) {
+    const match = /^\s*<([^>]+)>;\s*rel="next"\s*$/.exec(part);
+    if (!match) continue;
+    const url = new URL(match[1]);
+    if (url.protocol !== 'https:' || url.hostname !== 'api.github.com') {
+      throw new Error('invalid GitHub pagination link');
+    }
+    return url.toString();
+  }
+  return null;
 }
 
 export function createUpdateChecker(options: UpdateCheckerOptions = {}): () => Promise<UpdateCheckResult> {
@@ -83,24 +111,43 @@ export function createUpdateChecker(options: UpdateCheckerOptions = {}): () => P
   const now = options.now ?? (() => new Date());
   const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
   let cache: { result: UpdateCheckResult; expiresAt: number } | undefined;
+  let inFlight: Promise<UpdateCheckResult> | undefined;
 
-  return async () => {
-    if (!currentVersion) throw new Error('invalid current application version');
-
-    const currentTime = now();
-    if (cache && currentTime.getTime() < cache.expiresAt) return cache.result;
-
-    const response = await fetcher(GITHUB_TAGS_URL, {
+  const runCheck = async (validCurrentVersion: string): Promise<UpdateCheckResult> => {
+    const restOptions: RequestInit & { timeout: number; retries: number } = {
       headers: {
         Accept: 'application/vnd.github+json',
         'User-Agent': 'Mail-Hub',
       },
       timeout: 10_000,
       retries: 1,
-    });
+    };
+    let response = await fetcher(GITHUB_TAGS_URL, restOptions);
 
     let latestVersion: string;
+    let source: UpdateCheckResult['source'] = 'github-api';
+    const restVersions: string[] = [];
+    const visitedPages = new Set<string>([GITHUB_TAGS_URL]);
+    while (response.status !== 403 && response.status !== 429) {
+      if (!response.ok) throw new Error(`GitHub returned status ${response.status}`);
+
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error('invalid GitHub tags response');
+      }
+      restVersions.push(...stableVersionsFromTagsPayload(payload));
+
+      const nextPage = nextGitHubPage(response);
+      if (!nextPage) break;
+      if (visitedPages.has(nextPage)) throw new Error('invalid GitHub pagination link');
+      visitedPages.add(nextPage);
+      response = await fetcher(nextPage, restOptions);
+    }
+
     if (response.status === 403 || response.status === 429) {
+      source = 'github-feed';
       const feedResponse = await fetcher(GITHUB_TAGS_FEED_URL, {
         headers: {
           Accept: 'application/atom+xml',
@@ -114,26 +161,34 @@ export function createUpdateChecker(options: UpdateCheckerOptions = {}): () => P
       }
       latestVersion = findLatestStableVersionFromAtom(await feedResponse.text());
     } else {
-      if (!response.ok) throw new Error(`GitHub returned status ${response.status}`);
-
-      let payload: unknown;
-      try {
-        payload = await response.json();
-      } catch {
-        throw new Error('invalid GitHub tags response');
-      }
-
-      latestVersion = findLatestStableVersion(payload);
+      latestVersion = highestVersion(restVersions, 'no stable version tag found');
     }
 
+    const completedAt = now();
     const result: UpdateCheckResult = {
-      currentVersion,
+      currentVersion: validCurrentVersion,
       latestVersion,
-      updateAvailable: compareStableVersions(latestVersion, currentVersion) > 0,
-      checkedAt: currentTime.toISOString(),
+      updateAvailable: compareStableVersions(latestVersion, validCurrentVersion) > 0,
+      checkedAt: completedAt.toISOString(),
+      source,
     };
-    cache = { result, expiresAt: currentTime.getTime() + cacheTtlMs };
+    cache = { result, expiresAt: completedAt.getTime() + cacheTtlMs };
     return result;
+  };
+
+  return async () => {
+    if (!currentVersion) throw new Error('invalid current application version');
+
+    const currentTime = now();
+    if (cache && currentTime.getTime() < cache.expiresAt) return cache.result;
+    if (inFlight) return inFlight;
+
+    inFlight = runCheck(currentVersion);
+    try {
+      return await inFlight;
+    } finally {
+      inFlight = undefined;
+    }
   };
 }
 
