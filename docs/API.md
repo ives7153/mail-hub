@@ -1278,6 +1278,22 @@ Mounted under `/api/admin`.
 }
 ```
 
+### GET /api/admin/update-check — Check for Updates
+
+Queries the Mail Hub GitHub repository for the highest stable `vX.Y.Z` tag and compares it with the running application version. This endpoint only checks version metadata; it does not pull Docker images, modify files, or restart the service.
+
+**Response 200**:
+```json
+{
+  "currentVersion": "0.9.4",
+  "latestVersion": "0.9.5",
+  "updateAvailable": true,
+  "checkedAt": "2026-07-17T00:00:00.000Z"
+}
+```
+
+GitHub request failures return `502`.
+
 ---
 
 ## Error Responses
