@@ -34,7 +34,7 @@ Response 200:
 ```json
 {
   "status": "ok",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "startedAt": "2025-01-01T00:00:00Z",
   "uptime": 3600,
   "db": "connected"
@@ -1320,7 +1320,7 @@ Mounted under `/api/admin`.
 **Response 200**:
 ```json
 {
-  "version": "0.9.6",
+  "version": "0.9.7",
   "uptime": 3600,
   "dbPath": "/app/data/mail.db",
   "dbSize": "1.2 MB",
@@ -1336,8 +1336,8 @@ Queries the Mail Hub GitHub repository for the highest stable `vX.Y.Z` tag and c
 **Response 200**:
 ```json
 {
-  "currentVersion": "0.9.6",
-  "latestVersion": "0.9.7",
+  "currentVersion": "0.9.7",
+  "latestVersion": "0.9.8",
   "updateAvailable": true,
   "checkedAt": "2026-07-17T00:00:00.000Z",
   "source": "github-api"
