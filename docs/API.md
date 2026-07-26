@@ -721,7 +721,7 @@ Supported formats per line:
 
 ### GET /api/outlook/accounts — List Accounts
 
-**Query parameters**: `status=valid|invalid|pending_oauth|no_token`, `available=true|false`, `group=...`, `type=long|short`
+**Query parameters**: `status=valid|invalid|pending_oauth|no_token`, `available=true|false`, `group=...`, `type=long|short`, `q=...` (fuzzy match on email or group name)
 
 **Response 200**:
 ```json
@@ -1173,7 +1173,10 @@ On failure: `{ "ok": false, "error": "Connection refused" }`
 
 ### GET /api/services — Service Summary
 
-Aggregated view of all target services.
+Aggregated view of all target services. Counters are durable (`service_stats`
+table): they accumulate for the lifetime of the database and survive the
+retention purge of old inboxes and fail-log entries, so a service never
+disappears from this list just because its inboxes aged out.
 
 **Response 200**:
 ```json
@@ -1189,13 +1192,18 @@ Aggregated view of all target services.
       "name": "twitter.com",
       "totalInboxes": 45,
       "activeInboxes": 3,
+      "successCount": 40,
       "failCount": 2,
       "blockCount": 1,
+      "firstUsed": "2024-12-01T00:00:00Z",
       "lastUsed": "2025-01-01T00:00:00Z"
     }
   ]
 }
 ```
+
+`totalInboxes`, `successCount`, and `failCount` are cumulative; `activeInboxes`
+counts currently active (still retained) inboxes.
 
 ### GET /api/services/:name — Service Detail
 
@@ -1203,11 +1211,21 @@ Aggregated view of all target services.
 ```json
 {
   "name": "twitter.com",
+  "stats": {
+    "totalInboxes": 45,
+    "successCount": 40,
+    "failCount": 2,
+    "firstUsed": "2024-12-01T00:00:00Z",
+    "lastUsed": "2025-01-01T00:00:00Z"
+  },
   "inboxes": [...],
   "failures": [...],
   "blocks": [...]
 }
 ```
+
+`stats` is cumulative and durable; `inboxes` / `failures` list only recent,
+still-retained rows (up to 50 each).
 
 ---
 

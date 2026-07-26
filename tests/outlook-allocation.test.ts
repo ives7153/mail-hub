@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dispatch } from '../src/dispatcher.js';
 import { allRows, getDb, getRow } from '../src/db.js';
 import { OutlookProvider } from '../src/providers/outlook.js';
+import { app, authHeaders, jsonHeaders } from './helpers/http.js';
 
 describe('Outlook account allocation', () => {
   it('reserves the selected account with the final inbox id during creation', async () => {
@@ -118,5 +119,34 @@ describe('Outlook account allocation', () => {
       'three@open.test',
       'two@open.test',
     ]);
+  });
+
+  it('records the service on a failure report when the setting was never written (regression)', async () => {
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO outlook_accounts (email, password, client_id, refresh_token, token_status)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run('unset@outlook.test', 'pw', 'client', 'refresh', 'valid');
+    const created = await dispatch({ provider: 'outlook', for: 'svc-unset.com' });
+
+    // No settings row exists: GET /api/outlook/settings reports this as
+    // enabled (`!== '0'`), so the report path must agree and record it.
+    const res = await app.request(`/api/inbox/${created.id}/report`, {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ success: false }),
+    });
+    expect(res.status).toBe(200);
+
+    const settingsRes = await app.request('/api/outlook/settings', { headers: authHeaders() });
+    const settings = await settingsRes.json() as { recordFailService: boolean };
+    expect(settings.recordFailService).toBe(true);
+
+    const account = getRow<{ used_services: string }>(
+      db,
+      `SELECT used_services FROM outlook_accounts WHERE email = ?`,
+      'unset@outlook.test',
+    );
+    expect(JSON.parse(account!.used_services)).toEqual(['svc-unset.com']);
   });
 });

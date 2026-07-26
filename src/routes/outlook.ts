@@ -617,6 +617,7 @@ outlookRoutes.get('/outlook/accounts', (c) => {
   const group = c.req.query('group');
 
   const type = c.req.query('type');
+  const q = c.req.query('q');
 
   let sql = `SELECT oa.email, oa.token_status, oa.assigned_inbox_id, oa.group_name, oa.account_type, oa.created_at, oa.token_renewed_at, oa.last_checked_at, oa.oauth_last_error,
              (SELECT id FROM inboxes WHERE provider='outlook' AND address=oa.email ORDER BY created_at DESC LIMIT 1) as last_inbox_id
@@ -639,6 +640,11 @@ outlookRoutes.get('/outlook/accounts', (c) => {
   if (type) {
     conditions.push(`account_type = ?`);
     params.push(type);
+  }
+  if (q) {
+    const escaped = `%${q.replace(/[%_\\]/g, '\\$&')}%`;
+    conditions.push(`(email LIKE ? ESCAPE '\\' OR COALESCE(group_name, '') LIKE ? ESCAPE '\\')`);
+    params.push(escaped, escaped);
   }
 
   if (conditions.length) sql += ' AND ' + conditions.join(' AND ');

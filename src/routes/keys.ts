@@ -71,10 +71,16 @@ keyRoutes.patch('/keys/:key', async (c) => {
     return c.json({ error: 'Key not found' }, 404);
   }
 
-  const clause = buildSetClause(body, {
+  // buildSetClause uses each field name verbatim as the SQL column name, so the
+  // camelCase API field must be renamed to its snake_case column first —
+  // otherwise the UPDATE fails with "no such column: dailyLimit".
+  const fields: Record<string, unknown> = { ...body };
+  if (body.dailyLimit !== undefined) fields.daily_limit = body.dailyLimit;
+
+  const clause = buildSetClause(fields, {
     name: (v) => (v as string).trim(),
     active: (v) => (v ? 1 : 0),
-    dailyLimit: (v) => (v === null || v === '' ? null : Math.max(1, parseInt(v as string, 10) || 0)),
+    daily_limit: (v) => (v === null || v === '' ? null : Math.max(1, parseInt(v as string, 10) || 0)),
   });
   if (clause) {
     db.prepare(`UPDATE api_keys SET ${clause.setClause} WHERE key = ?`).run(...clause.params, key);

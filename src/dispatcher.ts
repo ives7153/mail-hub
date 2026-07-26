@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import { registry } from './providers/registry.js';
 import { rateLimiter } from './rate-limiter.js';
-import { allRows, getDb, getRow } from './db.js';
+import { allRows, bumpServiceCreated, getDb, getRow } from './db.js';
 import { PROVIDER, type ProviderName, type BaseProvider, type InboxData } from './providers/base.js';
 import { createLogger } from './logger.js';
 import { errorMessage, httpStatus, isTransientUpstreamError, retryAfterHeader } from './errors.js';
@@ -289,6 +289,14 @@ async function tryCreateInbox(
     await provider.releaseInbox(inbox, id).catch(() => {});
     throw error;
   }
+  // Durable per-service counters survive inbox retention purges. A stats
+  // failure must never undo an already-created inbox, so it stays outside
+  // the saveInbox try/catch.
+  if (opts.for) {
+    try { bumpServiceCreated(opts.for); } catch (error) {
+      log.warn('failed to bump service stats', { service: opts.for, error: errorMessage(error) });
+    }
+  }
   rateLimiter.recordCreateSuccess(providerName);
   return {
     id,
@@ -300,6 +308,9 @@ async function tryCreateInbox(
 }
 
 export async function dispatch(opts: DispatchOptions): Promise<DispatchResult> {
+  // Normalize once so target_service is stored, block-matched, and counted
+  // under a single canonical name (" x.com " and "x.com" must not diverge).
+  opts = { ...opts, for: opts.for?.trim() || undefined };
   if (opts.for && /^(example\.(com|org|net)|test\.(com|org)|localhost)$/i.test(opts.for)) {
     throw new Error(`'${opts.for}' is an example domain, use a real target service`);
   }

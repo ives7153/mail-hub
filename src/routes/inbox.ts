@@ -5,7 +5,7 @@ import { dispatch, getDomainAtLevel } from '../dispatcher.js';
 import { registry } from '../providers/registry.js';
 import { rateLimiter } from '../rate-limiter.js';
 import { extractCodes } from '../code-extractor.js';
-import { allRows, getDb, getRow, getSetting, logActivity } from '../db.js';
+import { allRows, bumpServiceReported, getDb, getRow, getSetting, logActivity } from '../db.js';
 import { parseStoredInbox, releaseInboxResources, rowToInboxData } from '../inbox-lifecycle.js';
 import type { BaseProvider, InboxData, Message, MessageDetail } from '../providers/base.js';
 import { PROVIDER } from '../providers/base.js';
@@ -388,7 +388,9 @@ inboxRoutes.post('/inbox/:id/report', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));
   const success: boolean = body.success ?? false;
-  const service: string | undefined = body.service;
+  // Runtime guard: the type annotation is erased, and a non-string `service`
+  // from an API client must not reach .trim() / SQL binding.
+  const service: string | undefined = typeof body.service === 'string' ? body.service : undefined;
 
   const db = getDb();
   const row = getInboxRow<{ provider: string; address: string; target_service: string | null }>(c, id, 'provider, address, target_service');
@@ -397,10 +399,15 @@ inboxRoutes.post('/inbox/:id/report', async (c) => {
   }
 
   const { provider: providerName, address, target_service: targetService } = row;
-  const svc = service || targetService || undefined;
+  // Trim to the same canonical form dispatch() stores, so fail_log, blocks,
+  // used_services and service_stats all key off one name — an auto-block
+  // inserted under a padded name would be invisible to the dispatcher lookup.
+  const svc = service?.trim() || targetService || undefined;
   const domain = address.split('@')[1];
 
-  const shouldRecordService = success || getSetting('outlook_record_fail_service') === '1';
+  // Default must match GET /api/outlook/settings (`!== '0'`), which reports
+  // this as enabled when the key was never written.
+  const shouldRecordService = success || getSetting('outlook_record_fail_service') !== '0';
 
   if (svc && providerName === PROVIDER.OUTLOOK && shouldRecordService) {
     const email = address;
@@ -416,6 +423,8 @@ inboxRoutes.post('/inbox/:id/report', async (c) => {
       }
     }
   }
+
+  if (svc) bumpServiceReported(svc, success);
 
   if (success) {
     db.prepare(

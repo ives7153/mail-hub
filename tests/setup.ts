@@ -38,6 +38,7 @@ beforeEach(() => {
     'settings',
     'api_keys',
     'fail_log',
+    'service_stats',
     'block_rules',
     'activity_log',
     'template_providers',
