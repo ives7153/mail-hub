@@ -103,7 +103,7 @@ These are built into the code (not templates). Configurable via the **Provider M
 
 | Provider | Type | Description |
 |----------|------|-------------|
-| Outlook | Account Pool | Import Outlook accounts, complete missing authorization, 1:1 assignment, returned to pool on close |
+| Outlook | Account Pool | Import Outlook accounts, complete missing authorization, 1:1 assignment, returned to pool on close; optional `+` sub-address alias |
 | YYDS Mail | API Key Pool | Import keys, round-robin rotation, 20,000 calls/day per key |
 | IMAP Domain Email | Account Pool | Connect your own domain via IMAP with catch-all; highest trust level |
 
@@ -139,6 +139,13 @@ curl -X POST http://localhost:3100/api/inbox \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{"for": "twitter.com"}'
+
+# Create inbox with an alias address (e.g. account+ab12cd@outlook.com)
+# The tag is generated server-side; Outlook only, other providers ignore it
+curl -X POST http://localhost:3100/api/inbox \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"for": "twitter.com", "alias": true}'
 
 # Get messages
 curl http://localhost:3100/api/inbox/{id}/messages \

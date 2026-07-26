@@ -103,7 +103,7 @@ pm2 start ecosystem.config.cjs
 
 | 渠道 | 类型 | 说明 |
 |------|------|------|
-| Outlook | 账号池 | 导入 Outlook 账号，支持裸账号授权补全；1:1 分配，关闭后回池 |
+| Outlook | 账号池 | 导入 Outlook 账号，支持裸账号授权补全；1:1 分配，关闭后回池；可选 `+` 子地址别名 |
 | YYDS Mail | API Key 池 | 导入 Key，按 key 轮转，单 Key 每日 20,000 次调用 |
 | IMAP 域名邮箱 | 账号池 | 连接自有域名邮箱（catch-all），信任度最高 |
 
@@ -139,6 +139,13 @@ curl -X POST http://localhost:3100/api/inbox \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{"for": "twitter.com"}'
+
+# 创建收件箱（要一个别名地址，如 account+ab12cd@outlook.com）
+# 标签由服务端生成；仅 Outlook 支持，其他渠道忽略此项
+curl -X POST http://localhost:3100/api/inbox \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"for": "twitter.com", "alias": true}'
 
 # 获取邮件
 curl http://localhost:3100/api/inbox/{id}/messages \
