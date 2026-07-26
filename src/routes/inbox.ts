@@ -9,6 +9,7 @@ import { allRows, bumpServiceReported, getDb, getRow, getSetting, logActivity } 
 import { isMessageWithinInboxLifetime, parseInboxTimestamp, parseStoredInbox, releaseInboxResources, rowToInboxData } from '../inbox-lifecycle.js';
 import type { BaseProvider, InboxData, Message, MessageDetail } from '../providers/base.js';
 import { PROVIDER } from '../providers/base.js';
+import { stripPlusTag } from '../providers/outlook.js';
 import type { AdminEnv } from './admin.js';
 import { createLogger } from '../logger.js';
 import { errorMessage, httpStatus } from '../errors.js';
@@ -91,6 +92,19 @@ function getInboxRow<T extends object>(c: AppContext, id: string, columns: strin
   return getRow<T>(db, scoped.sql, ...scoped.params);
 }
 
+/**
+ * The Outlook account behind an inbox. With plus addressing the inbox address
+ * is `local+tag@domain` while the account row is keyed on `local@domain`, so
+ * `auth_data.email` — written by the provider and holding the account identity
+ * verbatim — is the authoritative source. Falls back to the stripped address
+ * for rows written before that field existed.
+ */
+function accountEmailForInbox(db: Database.Database, c: AppContext, id: string, address: string): string {
+  const scoped = addOwnerScope(c, `SELECT json_extract(auth_data, '$.email') AS email FROM inboxes WHERE id = ?`, [id]);
+  const row = getRow<{ email: string | null }>(db, scoped.sql, ...scoped.params);
+  return row?.email || stripPlusTag(address);
+}
+
 class PollRateLimitError extends Error {
   retryAfter: string | null;
 
@@ -131,6 +145,7 @@ inboxRoutes.post('/inbox', async (c) => {
       domain: body.domain,
       subdomain: body.subdomain,
       username: body.username,
+      alias: body.alias === true,
       duration: body.duration,
       needPolling: body.needPolling,
       ownerKey: c.get('apiKey'),
@@ -425,7 +440,12 @@ inboxRoutes.post('/inbox/:id/report', async (c) => {
   const shouldRecordService = success || getSetting('outlook_record_fail_service') === '1';
 
   if (svc && providerName === PROVIDER.OUTLOOK && shouldRecordService) {
-    const email = address;
+    // used_services is keyed on the ACCOUNT email. An alias inbox's address is
+    // `local+tag@domain`, which matches no account row — looking it up verbatim
+    // would silently no-op and leave the anti-reuse blacklist unwritten. Read
+    // the account identity from auth_data, falling back to the stripped address
+    // for rows predating that field.
+    const email = accountEmailForInbox(db, c, id, address);
     const account = getRow<{ used_services: string }>(db, `SELECT used_services FROM outlook_accounts WHERE email = ?`, email);
     if (account) {
       let used: string[] = [];

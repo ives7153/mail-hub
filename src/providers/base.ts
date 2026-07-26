@@ -26,6 +26,11 @@ export interface ProviderMeta {
     pollInbox: boolean;
     realtime: boolean;
     attachments: boolean;
+    /**
+     * Provider can hand out a sub-address (e.g. Outlook plus addressing) on
+     * request. Optional so providers that cannot do it need no change.
+     */
+    alias?: boolean;
   };
 }
 
@@ -59,8 +64,14 @@ export abstract class BaseProvider {
     return 'endpoint';
   }
 
-  abstract getDomains(opts?: { for?: string }): Promise<string[]>;
-  abstract createInbox(opts?: { domain?: string; username?: string; for?: string; subdomain?: string; inboxId?: string }): Promise<InboxData>;
+  /**
+   * `alias` mirrors the create request: a provider that scopes its candidate
+   * accounts by prior use must not exclude them when the caller will be handed
+   * a fresh sub-address, or dispatch would reject the request before
+   * createInbox ever runs.
+   */
+  abstract getDomains(opts?: { for?: string; alias?: boolean }): Promise<string[]>;
+  abstract createInbox(opts?: { domain?: string; username?: string; for?: string; subdomain?: string; inboxId?: string; alias?: boolean }): Promise<InboxData>;
   abstract getMessages(inbox: InboxData): Promise<Message[]>;
   abstract getMessage(inbox: InboxData, messageId: string): Promise<MessageDetail>;
 

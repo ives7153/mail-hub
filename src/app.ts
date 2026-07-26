@@ -99,6 +99,7 @@ Request body (JSON):
     "provider": "mailtm",      // (optional) force a specific provider
     "domain": "example.com",   // (optional) request a specific email domain
     "subdomain": "team-a",    // (optional) wildcard child domain prefix (YYDS provider only)
+    "alias": true,             // (optional) ask for a sub-address — see "Aliases" below
     "duration": 600,           // (optional) desired lifetime in seconds
     "needPolling": true        // (optional, default true) whether inbox must support polling
   }
@@ -116,8 +117,28 @@ Response 201:
 "discord.com", "steam.com"). It is used for:
   - Avoiding domains already blocked by that service
   - Preventing Outlook accounts from being reused for the same service
+    (unless "alias" is set — see below)
   - Statistics and management tracking by the service operator
 Do NOT omit this field. The service operator requires it for management purposes.
+
+#### Aliases ("alias": true)
+
+Asks for a sub-address instead of the plain one. The tag is generated
+server-side — do NOT try to supply it. Only providers advertising
+"features.alias" honour it (currently Outlook, which returns
+account+tag@outlook.com); others ignore it silently, so with auto-dispatch you
+may still receive a plain address. Always read "address" from the response.
+
+Normally one Outlook account is handed to a given "for" service only once.
+An aliased request bypasses that limit, so the same account can register at the
+same service repeatedly, each time with a fresh address. Two things to know:
+
+  - Many signup forms reject addresses containing "+". This is why the flag is
+    opt-in per request rather than always on — use it only for services you
+    know accept sub-addressing.
+  - An alias is a different address, NOT extra capacity: the inbox still holds
+    one pooled account, so repeat registrations are sequential. Close the
+    current inbox before creating the next one.
 
 ### GET /api/inboxes
 List your inboxes.

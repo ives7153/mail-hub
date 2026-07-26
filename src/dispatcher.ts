@@ -24,6 +24,7 @@ interface DispatchOptions {
   duration?: number;
   needPolling?: boolean;
   ownerKey?: string;
+  alias?: boolean;
 }
 
 interface DispatchResult {
@@ -120,6 +121,17 @@ function getBlockedDomains(service: string): Set<string> {
   return new Set(rows.map((row) => row.domain));
 }
 
+/**
+ * The scoping passed to getDomains. Kept in one place because four call sites
+ * need it identical — if one of them drops `alias`, a provider that filters by
+ * prior service use reports zero domains and dispatch fails with
+ * "all domains blocked" before createInbox is reached.
+ */
+function domainScope(targetService?: string, alias?: boolean): { for?: string; alias?: boolean } | undefined {
+  if (!targetService && !alias) return undefined;
+  return { ...(targetService ? { for: targetService } : {}), ...(alias ? { alias: true } : {}) };
+}
+
 function pickDomain(providerName: string, domains: string[]): string {
   const start = domainCursor.get(providerName) ?? Math.floor(Math.random() * domains.length);
   const domain = domains[start % domains.length];
@@ -131,7 +143,8 @@ async function selectAllowedDomain(
   provider: BaseProvider,
   requestedDomain: string | undefined,
   blockedDomains: Set<string>,
-  targetService?: string
+  targetService?: string,
+  alias?: boolean
 ): Promise<string | undefined> {
   if (requestedDomain) {
     if (isDomainBlocked(requestedDomain, blockedDomains)) {
@@ -143,7 +156,16 @@ async function selectAllowedDomain(
   if (provider.meta.type === 'alias') return undefined;
   if (canCreateWithoutPreselectedDomain(provider)) return undefined;
 
-  const domains = await provider.getDomains(targetService ? { for: targetService } : undefined);
+  const domains = await provider.getDomains(domainScope(targetService, alias));
+  // An empty list and a fully-blocked list are different failures. A pool
+  // provider returns nothing when it has no account left to offer — often
+  // because every one is already used for this service — and reporting that as
+  // "all domains blocked" sends the operator hunting through the block list.
+  if (domains.length === 0) {
+    throw new Error(
+      `${provider.meta.name}: no address available${targetService ? ` for ${targetService}` : ''}`,
+    );
+  }
   const allowed = domains.filter((d) => !isDomainBlocked(d, blockedDomains));
   if (allowed.length === 0) {
     throw new Error(`${provider.meta.name}: all domains blocked`);
@@ -175,7 +197,8 @@ async function scoreProviders(
   providers: BaseProvider[],
   blockedDomains: Set<string>,
   needPolling: boolean,
-  targetService?: string
+  targetService?: string,
+  alias?: boolean
 ): Promise<ProviderScore[]> {
   const allStats = getAllProviderStats();
 
@@ -197,7 +220,7 @@ async function scoreProviders(
     if (rateOk && !canCreateWithoutPreselectedDomain(p)) {
       try {
         domains = await withTimeout(
-          p.getDomains(targetService ? { for: targetService } : undefined),
+          p.getDomains(domainScope(targetService, alias)),
           SCORING_DOMAINS_TIMEOUT_MS,
         );
         unblockedDomains = domains.filter((d) => !isDomainBlocked(d, blockedDomains));
@@ -260,6 +283,7 @@ async function tryCreateInbox(
     ...(opts.for ? { for: opts.for } : {}),
     ...(opts.subdomain ? { subdomain: opts.subdomain } : {}),
     ...(opts.username ? { username: opts.username } : {}),
+    ...(opts.alias ? { alias: true } : {}),
     ...(duration ? { duration } : {}),
     inboxId: id,
   };
@@ -327,7 +351,7 @@ export async function dispatch(opts: DispatchOptions): Promise<DispatchResult> {
       throw new Error(`Provider '${opts.provider}' is rate-limited`);
     }
     const blockedDomains = opts.for ? getBlockedDomains(opts.for) : new Set<string>();
-    const domain = await selectAllowedDomain(p, opts.domain, blockedDomains, opts.for);
+    const domain = await selectAllowedDomain(p, opts.domain, blockedDomains, opts.for, opts.alias);
 
     try {
       return await tryCreateInbox(p, p.meta.name, opts, domain);
@@ -338,7 +362,7 @@ export async function dispatch(opts: DispatchOptions): Promise<DispatchResult> {
   }
 
   const blockedDomains = opts.for ? getBlockedDomains(opts.for) : new Set<string>();
-  const scored = await scoreProviders(enabledProviders, blockedDomains, needPolling, opts.for);
+  const scored = await scoreProviders(enabledProviders, blockedDomains, needPolling, opts.for, opts.alias);
   const errors: string[] = [];
 
   for (const { provider: p, reason, unblockedDomains } of scored) {
@@ -351,7 +375,7 @@ export async function dispatch(opts: DispatchOptions): Promise<DispatchResult> {
           try {
             let domain: string | undefined;
             if (!canCreateWithoutPreselectedDomain(pair)) {
-              let domains = await pair.getDomains(opts.for ? { for: opts.for } : undefined);
+              let domains = await pair.getDomains(domainScope(opts.for, opts.alias));
               domains = domains.filter((d) => !isDomainBlocked(d, blockedDomains));
               if (domains.length === 0) continue;
               domain = domains.length ? pickDomain(pairName, domains) : undefined;
@@ -376,12 +400,12 @@ export async function dispatch(opts: DispatchOptions): Promise<DispatchResult> {
         // could not (rate-limited then, or the scoring fetch failed).
         let domains = unblockedDomains;
         if (domains === undefined) {
-          domains = (await p.getDomains(opts.for ? { for: opts.for } : undefined))
+          domains = (await p.getDomains(domainScope(opts.for, opts.alias)))
             .filter((d) => !isDomainBlocked(d, blockedDomains));
         }
 
         if (domains.length === 0 && p.meta.type !== 'alias') {
-          errors.push(`${p.meta.name}: all domains blocked`);
+          errors.push(`${p.meta.name}: no unblocked address available`);
           continue;
         }
         domain = domains.length ? pickDomain(p.meta.name, domains) : undefined;

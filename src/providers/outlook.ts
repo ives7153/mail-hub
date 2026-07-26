@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { BaseProvider, PROVIDER, type InboxData, type Message, type MessageDetail, type ProviderMeta } from './base.js';
 import { allRows, getDb, getRow } from '../db.js';
 import { createConnection } from 'net';
-import { fetchWithTimeout, formatSender } from '../utils.js';
+import { fetchWithTimeout, formatSender, randomString } from '../utils.js';
 import { errorMessage, UpstreamHttpError } from '../errors.js';
 
 const OAUTH2_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
@@ -55,6 +55,53 @@ const ALLOCABLE_ACCOUNT_WHERE = `assigned_inbox_id IS NULL
 
 function cacheKey(clientId: string, refreshToken: string): string {
   return `${clientId}:${refreshToken.slice(-8)}`;
+}
+
+/**
+ * `local+tag@domain` → `local@domain`. Plus-addressed mail is delivered to the
+ * base mailbox, so the account row is always keyed on the stripped form. Any
+ * lookup that treats an inbox address as an account email must go through this
+ * (or, better, read `authData.email`, which holds the account identity
+ * verbatim). Returns the input unchanged when there is no tag.
+ */
+export function stripPlusTag(address: string): string {
+  const at = address.lastIndexOf('@');
+  if (at <= 0) return address;
+  const local = address.slice(0, at);
+  const plus = local.indexOf('+');
+  if (plus < 0) return address;
+  return local.slice(0, plus) + address.slice(at);
+}
+
+// RFC 5321 caps the local part at 64 octets; base + '+' + tag must fit.
+const MAX_LOCAL_PART = 64;
+
+/**
+ * Microsoft accepts any legal SMTP local-part characters after the '+', but a
+ * tag that reaches a signup form should be boring: letters, digits, dash,
+ * underscore and dot only. Anything else is dropped rather than escaped, so a
+ * caller-supplied tag can never produce an unroutable address.
+ */
+function sanitizeTag(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9._-]/g, '').replace(/^[.\-_]+/, '').slice(0, 24);
+}
+
+/**
+ * Builds `local+tag@domain`, truncating the tag (never the base) if the local
+ * part would exceed the RFC limit. Returns null when no usable tag survives, so
+ * the caller falls back to the plain account address instead of shipping a
+ * malformed one.
+ */
+export function buildAliasAddress(accountEmail: string, tag: string): string | null {
+  const at = accountEmail.lastIndexOf('@');
+  if (at <= 0) return null;
+  const base = accountEmail.slice(0, at);
+  const domain = accountEmail.slice(at);
+  const budget = MAX_LOCAL_PART - base.length - 1;
+  if (budget < 1) return null;
+  const clean = sanitizeTag(tag).slice(0, budget);
+  if (!clean) return null;
+  return `${base}+${clean}${domain}`;
 }
 
 function getCachedToken(clientId: string, refreshToken: string): string | null {
@@ -217,6 +264,16 @@ function graphMsgToDetail(normalized: GraphMessage): MessageDetail {
   };
 }
 
+/**
+ * The account identity behind an inbox. `authData.email` holds it verbatim;
+ * the fallback exists for rows written before that field, where `address` was
+ * always the bare account email — strip any tag so an alias inbox can never
+ * resolve to a non-existent account row.
+ */
+function accountEmailOf(inbox: InboxData): string {
+  return inbox.authData.email || stripPlusTag(inbox.address);
+}
+
 export class OutlookProvider extends BaseProvider {
   meta: ProviderMeta = {
     name: PROVIDER.OUTLOOK,
@@ -227,10 +284,14 @@ export class OutlookProvider extends BaseProvider {
     rateLimit: { createPerMinute: 60, pollPerMinute: 30 },
     retention: 'Permanent',
     features: {
+      // The account's local part is fixed, so an arbitrary username is not
+      // possible — only a `+tag` suffix on that fixed base. Advertising
+      // customUsername would promise something this provider cannot do.
       customUsername: false,
       pollInbox: true,
       realtime: false,
       attachments: true,
+      alias: true,
     },
   };
 
@@ -239,11 +300,11 @@ export class OutlookProvider extends BaseProvider {
     return row?.refresh_token || null;
   }
 
-  async getDomains(opts?: { for?: string }): Promise<string[]> {
+  async getDomains(opts?: { for?: string; alias?: boolean }): Promise<string[]> {
     const db = getDb();
     let whereClauses = ALLOCABLE_ACCOUNT_WHERE;
     const params: unknown[] = [];
-    if (opts?.for) {
+    if (opts?.for && !opts.alias) {
       whereClauses += ` AND (used_services IS NULL OR used_services NOT LIKE ?)`;
       params.push(`%"${opts.for.replace(/"/g, '\\"')}"%`);
     }
@@ -255,7 +316,7 @@ export class OutlookProvider extends BaseProvider {
     return rows.map((r) => r.domain);
   }
 
-  async createInbox(opts?: { domain?: string; for?: string; inboxId?: string }): Promise<InboxData> {
+  async createInbox(opts?: { domain?: string; for?: string; inboxId?: string; alias?: boolean }): Promise<InboxData> {
     const db = getDb();
     const inboxId = opts?.inboxId ?? `pending-${randomUUID()}`;
 
@@ -265,7 +326,12 @@ export class OutlookProvider extends BaseProvider {
       whereClauses += ` AND email LIKE ?`;
       selectParams.push(`%@${opts.domain}`);
     }
-    if (opts?.for) {
+    // used_services is the anti-reuse blacklist for the ACCOUNT's own address.
+    // A fresh alias is a new address at the target service, which is the point
+    // of asking for one, so an aliased request may reuse a burned account. The
+    // record is still written on report, so a later PLAIN request for that
+    // service still finds the account excluded.
+    if (opts?.for && !opts.alias) {
       whereClauses += ` AND (used_services IS NULL OR used_services NOT LIKE ?)`;
       selectParams.push(`%"${opts.for.replace(/"/g, '\\"')}"%`);
     }
@@ -304,8 +370,18 @@ export class OutlookProvider extends BaseProvider {
         throw new Error(`Outlook 账号 ${email} 缺少令牌凭据`);
       }
 
+      // Plus addressing is opt-in per request: the caller asks for an alias and
+      // the tag is generated here, so no caller has to invent one or can probe
+      // for which tags exist. The account still serves exactly one inbox, so the
+      // tag buys a distinct address at the target service, not extra pool
+      // capacity — and nothing has to sort shared mail by recipient.
+      // `authData.email` stays the ACCOUNT address: every credential lookup
+      // (refresh token, api_type, used_services) keys off it, and only
+      // `address` carries the tag.
+      const aliasAddress = opts?.alias ? buildAliasAddress(email, randomString(8)) : null;
+
       return {
-        address: email,
+        address: aliasAddress ?? email,
         authData: { email, password, clientId, refreshToken },
         provider: this.meta.name,
         apiBase: '',
@@ -317,7 +393,7 @@ export class OutlookProvider extends BaseProvider {
 
   async getMessages(inbox: InboxData): Promise<Message[]> {
     const { clientId } = inbox.authData;
-    const email = inbox.authData.email || inbox.address;
+    const email = accountEmailOf(inbox);
     const freshToken = this.getFreshRefreshToken(email) || inbox.authData.refreshToken;
     const db = getDb();
     const apiType = getRow<{ api_type: string }>(db, `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
@@ -345,7 +421,7 @@ export class OutlookProvider extends BaseProvider {
 
   async getMessage(inbox: InboxData, messageId: string): Promise<MessageDetail> {
     const { clientId } = inbox.authData;
-    const email = inbox.authData.email || inbox.address;
+    const email = accountEmailOf(inbox);
     const freshToken = this.getFreshRefreshToken(email) || inbox.authData.refreshToken;
     const apiType = getRow<{ api_type: string }>(getDb(), `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
 
@@ -371,7 +447,7 @@ export class OutlookProvider extends BaseProvider {
   }
 
   async releaseInbox(inbox: InboxData, inboxId: string): Promise<void> {
-    const email = inbox.authData.email || inbox.address;
+    const email = accountEmailOf(inbox);
     getDb().prepare(
       `UPDATE outlook_accounts SET assigned_inbox_id = NULL WHERE assigned_inbox_id = ? OR email = ?`
     ).run(inboxId, email);

@@ -619,8 +619,11 @@ outlookRoutes.get('/outlook/accounts', (c) => {
   const type = c.req.query('type');
   const q = c.req.query('q');
 
+  // last_inbox_id matches on auth_data.email, not address: with plus addressing
+  // an inbox's address is `local+tag@domain` while the account is `local@domain`,
+  // so an address join would report "never used" for every alias inbox.
   let sql = `SELECT oa.email, oa.token_status, oa.assigned_inbox_id, oa.group_name, oa.account_type, oa.created_at, oa.token_renewed_at, oa.last_checked_at, oa.oauth_last_error,
-             (SELECT id FROM inboxes WHERE provider='outlook' AND address=oa.email ORDER BY created_at DESC LIMIT 1) as last_inbox_id
+             (SELECT id FROM inboxes WHERE provider='outlook' AND COALESCE(json_extract(auth_data, '$.email'), address) = oa.email ORDER BY created_at DESC LIMIT 1) as last_inbox_id
              FROM outlook_accounts oa WHERE 1=1`;
   const conditions: string[] = [];
   const params: string[] = [];

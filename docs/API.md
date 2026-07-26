@@ -62,10 +62,37 @@ Create a new temporary inbox.
   "domain": "example.com",    // optional: request a specific email domain
   "subdomain": "team-a",      // optional: wildcard child domain prefix (YYDS only)
   "username": "customuser",   // optional: custom username
+  "alias": true,              // optional: ask for a sub-address (see below)
   "duration": 600,            // optional: lifespan in seconds
   "needPolling": true         // optional: require polling support (default: true)
 }
 ```
+
+**`alias`** — request a sub-address instead of the provider's plain address. The
+tag is generated server-side; callers do not supply it. Honored only by
+providers advertising `features.alias` (currently Outlook, which returns
+`account+tag@outlook.com`); silently ignored by the rest, so with auto-dispatch
+you may receive a plain address. Read `address` in the response for what you
+actually got.
+
+The inbox still occupies exactly one pooled account — an alias is a different
+address at the target service, not extra pool capacity. Use it for services that
+accept `+` in signup forms; many reject it, which is why this is opt-in per
+request rather than always on.
+
+**Effect on the anti-reuse blacklist.** Normally an Outlook account is handed to
+a given `for` service only once: reporting success records the service in the
+account's `used_services`, and later requests skip that account. An aliased
+request **bypasses that filter**, because each one mints a fresh address — so
+the same account can register at the same service repeatedly. The service is
+still recorded, so a later request *without* `alias` still finds the account
+excluded. Turning the flag off restores the original one-account-one-service
+guarantee.
+
+Two caveats worth knowing before relying on this: a site that strips `+tag`
+before comparing will still see one mailbox and may treat the second signup as a
+duplicate, and the account remains 1:1, so repeat registrations are sequential —
+close the current inbox before creating the next one on that account.
 
 **Response 201**:
 ```json
