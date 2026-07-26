@@ -3247,13 +3247,23 @@ function _changePageSize(n) {
 async function loadDashboard() {
   loadActivity();
   try {
-    const [provData, inboxData, rulesData, allInboxData, serviceData] = await Promise.all([
-      api('/providers'), apiAllInboxes('/inboxes?status=active'), api('/block-rules'), apiAllInboxes('/inboxes'), api('/services'),
+    // "最近邮箱" is a history panel — closed inboxes belong here. What it must
+    // NOT do is walk the whole table: apiAllInboxes() pages until it has every
+    // row, and Outlook recycles one account into a new closed row every reuse,
+    // so that list grows without bound. One page of the newest rows is what a
+    // "recent" panel means. The headline count comes from `total` on an
+    // active-only query, so it stays exact without paging either.
+    const [provData, activeCount, recentData, rulesData, serviceData] = await Promise.all([
+      api('/providers'),
+      api('/inboxes?status=active&page=1&pageSize=1'),
+      api('/inboxes?page=1&pageSize=100'),
+      api('/block-rules'),
+      api('/services'),
     ]);
     const providers = provData.providers || [];
-    const inboxes = inboxData.inboxes || [];
+    const activeTotal = Number(activeCount.total) || 0;
+    const recentInboxes = recentData.inboxes || [];
     const rules = rulesData.rules || [];
-    const allInboxes = allInboxData.inboxes || [];
     const enabled = providers.filter(p => p.enabled).length;
     const services = serviceData.summary?.totalServices ?? 0;
 
@@ -3265,7 +3275,7 @@ async function loadDashboard() {
         sys.style.background = '';
       } else {
         const parts = [
-          `<span style="color:var(--emerald);font-weight:var(--fw-semibold)">${inboxes.length}</span> ${t('dash.active_inboxes') || '活跃'}`,
+          `<span style="color:var(--emerald);font-weight:var(--fw-semibold)">${activeTotal}</span> ${t('dash.active_inboxes') || '活跃'}`,
           `<span style="color:var(--blue);font-weight:var(--fw-medium)">${enabled}</span><span style="color:var(--text3)">/${providers.length}</span> ${t('dash.active_providers') || '渠道'}`,
           `<span style="color:var(--rose);font-weight:var(--fw-medium)">${rules.length}</span> ${t('dash.block_rules') || '规则'}`,
           `<span style="color:var(--amber);font-weight:var(--fw-medium)">${services}</span> ${t('dash.tracked_services') || '服务'}`,
@@ -3276,7 +3286,7 @@ async function loadDashboard() {
       }
     }
 
-    _allDashInboxes = allInboxes;
+    _allDashInboxes = recentInboxes;
     delete _pageState['dash'];
     paginateTable('dash', _allDashInboxes, renderDashTable, 'dash-pager');
 
