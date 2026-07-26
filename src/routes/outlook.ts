@@ -821,7 +821,9 @@ outlookRoutes.get('/outlook/stats', (c) => {
 
 outlookRoutes.get('/outlook/settings', (c) => {
   return c.json({
-    recordFailService: getSetting('outlook_record_fail_service') !== '0',
+    // Opt-in, matching the report path (`=== '1'`): unset means failures do
+    // not record the service.
+    recordFailService: getSetting('outlook_record_fail_service') === '1',
     batchConcurrency: parseInt(getSetting('batch_concurrency', '5'), 10) || 5,
     oauthClientId: getSetting('outlook_oauth_client_id', config.outlookOAuthClientId),
     oauthRedirectUri: getSetting('outlook_oauth_redirect_uri', config.outlookOAuthRedirectUri),

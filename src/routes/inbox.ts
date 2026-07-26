@@ -405,9 +405,11 @@ inboxRoutes.post('/inbox/:id/report', async (c) => {
   const svc = service?.trim() || targetService || undefined;
   const domain = address.split('@')[1];
 
-  // Default must match GET /api/outlook/settings (`!== '0'`), which reports
-  // this as enabled when the key was never written.
-  const shouldRecordService = success || getSetting('outlook_record_fail_service') !== '0';
+  // Opt-in: only a success records the service by default. used_services is a
+  // permanent, irreversible blacklist for that account/service pair, so a
+  // failure — which is often transient (rate limit, upstream hiccup) — must not
+  // burn a paid account unless the operator explicitly turns this on.
+  const shouldRecordService = success || getSetting('outlook_record_fail_service') === '1';
 
   if (svc && providerName === PROVIDER.OUTLOOK && shouldRecordService) {
     const email = address;

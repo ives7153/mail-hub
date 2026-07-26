@@ -919,7 +919,7 @@ Allowed statuses: `started`, `waiting_user`, `failed`, `completed`.
 **Response 200**:
 ```json
 {
-  "recordFailService": true,
+  "recordFailService": false,
   "batchConcurrency": 5,
   "oauthClientId": "",
   "oauthRedirectUri": "http://localhost:3100/api/outlook/oauth/callback",
@@ -927,6 +927,12 @@ Allowed statuses: `started`, `waiting_user`, `failed`, `completed`.
   "oauthTenant": "consumers"
 }
 ```
+
+`recordFailService` defaults to `false`: only a **successful** report adds the
+target service to an Outlook account's `used_services`. That list is a
+permanent, irreversible per-account blacklist — an account is never offered to
+a service it already appears against — so a transient failure must not burn a
+paid account unless the operator opts in by setting this to `true`.
 
 ### PATCH /api/outlook/settings — Update Settings
 
