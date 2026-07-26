@@ -2763,6 +2763,20 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 function getToken() { return localStorage.getItem('token') || ''; }
 
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+// A value interpolated into an inline handler passes through TWO decoders: the
+// HTML attribute parser, then the JS parser. esc() is not enough here — it
+// leaves quotes intact, and even an &#39; would be decoded back to ' before JS
+// ever runs, letting a crafted service name / account name break out of the
+// string and execute. JSON.stringify emits a complete quoted JS literal, so
+// call sites must NOT wrap this in their own quotes.
+function jsArg(v) {
+  return JSON.stringify(String(v ?? ''))
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 function debounce(fn, wait) {
   let t = null;
   return function (...args) {
@@ -2891,6 +2905,28 @@ async function api(path, opts = {}) {
   try { data = await res.json(); } catch { throw new Error(`HTTP ${res.status}`); }
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
+}
+
+// GET /api/inboxes is server-paginated (default pageSize 50, max 100) while the
+// tables here paginate client-side over a full array. Without this, the UI
+// silently showed only the newest 50 rows and the pager reported 50 as the
+// total. Walk the pages using the `total` the endpoint returns.
+async function apiAllInboxes(path) {
+  // Callers build query strings that can end in '?' or '&'; normalize so the
+  // paging params always append cleanly.
+  const base = path.replace(/[?&]+$/, '');
+  const sep = base.includes('?') ? '&' : '?';
+  const PAGE_SIZE = 100;
+  const first = await api(`${base}${sep}page=1&pageSize=${PAGE_SIZE}`);
+  const rows = first.inboxes || [];
+  const total = Number(first.total);
+  if (!Number.isFinite(total) || total <= rows.length) return { ...first, inboxes: rows };
+  const lastPage = Math.ceil(total / PAGE_SIZE);
+  const rest = await Promise.all(
+    Array.from({ length: lastPage - 1 }, (_, i) => api(`${base}${sep}page=${i + 2}&pageSize=${PAGE_SIZE}`)),
+  );
+  for (const page of rest) rows.push(...(page.inboxes || []));
+  return { ...first, inboxes: rows };
 }
 
 // ─── Button loading state ───
@@ -3212,7 +3248,7 @@ async function loadDashboard() {
   loadActivity();
   try {
     const [provData, inboxData, rulesData, allInboxData, serviceData] = await Promise.all([
-      api('/providers'), api('/inboxes?status=active'), api('/block-rules'), api('/inboxes'), api('/services'),
+      api('/providers'), apiAllInboxes('/inboxes?status=active'), api('/block-rules'), apiAllInboxes('/inboxes'), api('/services'),
     ]);
     const providers = provData.providers || [];
     const inboxes = inboxData.inboxes || [];
@@ -3264,8 +3300,8 @@ function renderDashTable(rows) {
       <td><span class="badge ${i.status==='active'?'badge-active':'badge-closed'}"><span class="dot ${i.status==='active'?'dot-pulse':'dot-gray'}"></span> ${i.status==='active'?t('common.active'):t('common.closed')}</span></td>
       <td class="time">${shortTime(i.created_at)}</td>
       <td>
-        ${iconBtn('inbox', t('inbox.receive'), `return switchAndView('${esc(i.id)}')`, 'blue')}
-        ${iconBtn('code', t('inbox.extract'), `return switchAndCode('${esc(i.id)}')`, 'blue')}
+        ${iconBtn('inbox', t('inbox.receive'), `return switchAndView(${jsArg(i.id)})`, 'blue')}
+        ${iconBtn('code', t('inbox.extract'), `return switchAndCode(${jsArg(i.id)})`, 'blue')}
       </td>
     </tr>
   `).join('') : `<tr><td class="empty-row" colspan="6">${t('common.no_data')}</td></tr>`;
@@ -3306,12 +3342,12 @@ function renderInboxTable(rows) {
       <td><span class="badge ${i.status==='active'?'badge-active':'badge-closed'}"><span class="dot ${i.status==='active'?'dot-pulse':'dot-gray'}"></span> ${i.status==='active'?t('common.active'):t('common.closed')}</span></td>
       <td class="time">${fmtTime(i.expires_at, 'date')}</td>
       <td>
-        ${iconBtn('inbox', t('inbox.receive'), `return viewInbox('${esc(i.id)}')`, 'blue')}
-        ${iconBtn('code', t('inbox.extract'), `return getCode('${esc(i.id)}')`, 'blue')}
+        ${iconBtn('inbox', t('inbox.receive'), `return viewInbox(${jsArg(i.id)})`, 'blue')}
+        ${iconBtn('code', t('inbox.extract'), `return getCode(${jsArg(i.id)})`, 'blue')}
         ${i.status==='active' ? `
-          ${iconBtn('check', t('inbox.success'), `return reportInbox('${esc(i.id)}',true)`, 'blue')}
-          ${iconBtn('x', t('inbox.fail'), `return reportInbox('${esc(i.id)}',false)`, 'amber')}
-          ${iconBtn('trash', t('common.close'), `return closeInbox('${esc(i.id)}')`, 'danger')}
+          ${iconBtn('check', t('inbox.success'), `return reportInbox(${jsArg(i.id)},true)`, 'blue')}
+          ${iconBtn('x', t('inbox.fail'), `return reportInbox(${jsArg(i.id)},false)`, 'amber')}
+          ${iconBtn('trash', t('common.close'), `return closeInbox(${jsArg(i.id)})`, 'danger')}
         ` : ''}
       </td>
     </tr>
@@ -3325,7 +3361,7 @@ async function loadInboxes() {
   if (status) url += `status=${status}&`;
   if (provider) url += `provider=${provider}&`;
   try {
-    const data = await api(url);
+    const data = await apiAllInboxes(url);
     _allInboxes = data.inboxes || [];
     delete _pageState['inbox'];
     paginateTable('inbox', _allInboxes, renderInboxTable, 'inbox-pager');
@@ -3372,7 +3408,7 @@ async function viewInbox(id) {
       <span class="badge ${stBadge}">${stText}</span>
     </div>`;
     if (!msgs.length) {
-      area.innerHTML = `<div class="detail-panel">${inboxHeader}<p style="color:var(--text3)">${t('inbox.no_mail')}</p><div style="margin-top:8px">${iconBtn('refresh', t('nav.refresh'), `return viewInbox('${id}')`, 'blue')}</div></div>`;
+      area.innerHTML = `<div class="detail-panel">${inboxHeader}<p style="color:var(--text3)">${t('inbox.no_mail')}</p><div style="margin-top:8px">${iconBtn('refresh', t('nav.refresh'), `return viewInbox(${jsArg(id)})`, 'blue')}</div></div>`;
       return;
     }
     area.innerHTML = `
@@ -3380,14 +3416,14 @@ async function viewInbox(id) {
         ${inboxHeader}
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <h3>${t('inbox.messages_title', {n: msgs.length})}</h3>
-          ${iconBtn('refresh', t('nav.refresh'), `return viewInbox('${id}')`, 'blue')}
+          ${iconBtn('refresh', t('nav.refresh'), `return viewInbox(${jsArg(id)})`, 'blue')}
         </div>
         <div class="panel" style="margin-bottom:0"><table><thead><tr><th>${t('inbox.from')}</th><th>${t('inbox.subject')}</th><th data-i18n="common.time">${t('common.time')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${msgs.map(m => `
           <tr>
             <td style="font-size:var(--text-base)">${esc(m.from)}</td>
             <td>${esc(m.subject)}</td>
             <td class="time">${fmtTime(m.receivedAt, 'date')}</td>
-            <td>${iconBtn('mail', t('inbox.read'), `return readMessage('${id}','${esc(m.id)}')`, 'blue')}</td>
+            <td>${iconBtn('mail', t('inbox.read'), `return readMessage(${jsArg(id)},${jsArg(m.id)})`, 'blue')}</td>
           </tr>
         `).join('')}</tbody></table></div>
         <div id="msg-content"></div>
@@ -3455,7 +3491,7 @@ async function reportInbox(id, success) {
 async function closeInbox(id) {
   showDialog(t('inbox.close'), `<p>${t('dialog.confirm_close')}?</p>`, `
     <button class="btn" data-no-loading onclick="return hideDialog()">${t('common.cancel')}</button>
-    <button class="btn btn-danger" onclick="return doClose('${id}')">${t('dialog.confirm_close')}</button>
+    <button class="btn btn-danger" onclick="return doClose(${jsArg(id)})">${t('dialog.confirm_close')}</button>
   `);
 }
 async function doClose(id) {
@@ -3658,7 +3694,7 @@ function renderServiceList(rows) {
       <td style="text-align:center"><span style="color:${s.failCount > 0 ? 'var(--rose)' : 'var(--text3)'}">${s.failCount}</span></td>
       <td style="text-align:center"><span style="color:${s.blockCount > 0 ? 'var(--amber)' : 'var(--text3)'}">${s.blockCount}</span></td>
       <td class="time">${fmtTime(s.lastUsed, 'date')}</td>
-      <td>${iconBtn('info', t('common.detail'), `return loadServiceDetail('${esc(s.name)}')`, 'blue')}</td>
+      <td>${iconBtn('info', t('common.detail'), `return loadServiceDetail(${jsArg(s.name)})`, 'blue')}</td>
     </tr>
   `).join('') : '<tr><td class="empty-row" colspan="8">No services</td></tr>';
 }
@@ -3775,7 +3811,7 @@ async function loadProviders() {
             <div style="display:flex;align-items:center;gap:8px">
               <span class="badge ${tierBadge}">${tierText}</span>
               <label class="toggle">
-                <input type="checkbox" ${p.enabled ? 'checked' : ''} onchange="toggleProvider('${esc(p.name)}',this.checked)">
+                <input type="checkbox" ${p.enabled ? 'checked' : ''} onchange="toggleProvider(${jsArg(p.name)},this.checked)">
                 <div class="toggle-track"></div>
                 <div class="toggle-thumb"></div>
               </label>
@@ -3791,14 +3827,14 @@ async function loadProviders() {
           </div>
           ${features ? `<div class="provider-feature-line">${t('provider.features')}: ${features}</div>` : ''}
           <div class="provider-actions-row">
-            ${iconBtn('globe', t('provider.domains'), `return showDomains('${esc(p.name)}')`, 'blue')}
-            ${iconBtn('chart', t('provider.stats'), `return showProviderDetail('${esc(p.name)}')`, 'blue')}
+            ${iconBtn('globe', t('provider.domains'), `return showDomains(${jsArg(p.name)})`, 'blue')}
+            ${iconBtn('chart', t('provider.stats'), `return showProviderDetail(${jsArg(p.name)})`, 'blue')}
             <div class="provider-config-row">
               <label class="provider-inline-check">
-                <input type="checkbox" ${p.autoDispatch ? 'checked' : ''} onchange="setAutoDispatch('${esc(p.name)}',this.checked)"> ${t('provider.auto_dispatch')}
+                <input type="checkbox" ${p.autoDispatch ? 'checked' : ''} onchange="setAutoDispatch(${jsArg(p.name)},this.checked)"> ${t('provider.auto_dispatch')}
               </label>
               <label>${t('provider.priority')}</label>
-              <input class="provider-priority-input" type="number" value="${p.priority}" onchange="setPriority('${esc(p.name)}',this.value)">
+              <input class="provider-priority-input" type="number" value="${p.priority}" onchange="setPriority(${jsArg(p.name)},this.value)">
             </div>
           </div>
           <div id="pex-${p.name}"></div>
@@ -3885,7 +3921,7 @@ function renderGmailRules() {
   if (!grid) return;
   grid.innerHTML = GMAIL_RULES.map(r => {
     const active = _gmailRuleState[r.id];
-    return `<div onclick="return toggleGmailRule('${r.id}')" style="padding:12px;border:2px solid ${active ? 'var(--blue)' : 'var(--border)'};background:${active ? 'rgba(96,165,250,0.08)' : 'var(--bg2)'};border-radius:8px;cursor:pointer;transition:var(--transition)">
+    return `<div onclick="return toggleGmailRule(${jsArg(r.id)})" style="padding:12px;border:2px solid ${active ? 'var(--blue)' : 'var(--border)'};background:${active ? 'rgba(96,165,250,0.08)' : 'var(--bg2)'};border-radius:8px;cursor:pointer;transition:var(--transition)">
       <div style="font-weight:var(--fw-semibold);font-size:var(--text-md);color:${active ? 'var(--blue)' : 'var(--text2)'};margin-bottom:4px">${t(r.nameKey)}</div>
       <div style="font-size:var(--text-sm);color:var(--text3)">${t(r.descKey)}</div>
     </div>`;
@@ -4018,14 +4054,14 @@ function renderYdTable(rows) {
       <td><input type="checkbox" class="yd-check" value="${esc(a.api_key)}"></td>
       <td><span class="mono" style="font-size:var(--text-sm);cursor:pointer;user-select:all" onclick="return navigator.clipboard.writeText(this.textContent.trim()).then(()=>toast(t('toast.copied'))" title="Click to copy">${esc(a.api_key)}</span></td>
       <td style="font-size:var(--text-base)">${esc(a.name || '-')}</td>
-      <td><span class="badge ${wcClass}" style="cursor:pointer" onclick="return toggleYdWildcard('${esc(a.api_key)}',${wcOn ? 'false' : 'true'})" title="${t('gmail.click_toggle')}">${wcLabel}</span></td>
+      <td><span class="badge ${wcClass}" style="cursor:pointer" onclick="return toggleYdWildcard(${jsArg(a.api_key)},${wcOn ? 'false' : 'true'})" title="${t('gmail.click_toggle')}">${wcLabel}</span></td>
       <td style="text-align:center">${a.inbox_count || 0}</td>
       <td style="text-align:center">${a.daily_calls || 0}<span style="color:var(--text3);font-size:var(--text-xs)"> / 20k</span></td>
       <td class="time">${a.last_used_at ? fmtTime(a.last_used_at, 'date') : t('common.never')}</td>
-      <td><span class="badge ${stClass}" style="cursor:pointer" onclick="return toggleYdStatus('${esc(a.api_key)}','${a.status}')" title="${t('gmail.click_toggle')}">${stText}</span></td>
+      <td><span class="badge ${stClass}" style="cursor:pointer" onclick="return toggleYdStatus(${jsArg(a.api_key)},'${a.status}')" title="${t('gmail.click_toggle')}">${stText}</span></td>
       <td>
-        ${iconBtn('search', t('yyds.check'), `return checkSingleYd('${esc(a.api_key)}')`, 'blue')}
-        ${iconBtn('trash', t('common.delete'), `return deleteYdAccount('${esc(a.api_key)}')`, 'danger')}
+        ${iconBtn('search', t('yyds.check'), `return checkSingleYd(${jsArg(a.api_key)})`, 'blue')}
+        ${iconBtn('trash', t('common.delete'), `return deleteYdAccount(${jsArg(a.api_key)})`, 'danger')}
       </td>
     </tr>`;
   }).join('') : `<tr><td class="empty-row" colspan="9">${t('yyds.no_data')}</td></tr>`;
@@ -4114,7 +4150,7 @@ async function batchCheckYyds() {
 async function deleteYdAccount(key) {
   showDialog(t('dialog.confirm_delete'), `<p>${t('dialog.delete_key')}<br><span class="mono" style="font-size:var(--text-sm)">${esc(key)}</span></p>`, `
     <button class="btn" data-no-loading onclick="return hideDialog()">${t('common.cancel')}</button>
-    <button class="btn btn-danger" onclick="return doDeleteYd('${esc(key)}')">${t('dialog.confirm_delete')}</button>
+    <button class="btn btn-danger" onclick="return doDeleteYd(${jsArg(key)})">${t('dialog.confirm_delete')}</button>
   `);
 }
 
@@ -4175,8 +4211,8 @@ async function loadImapAccounts() {
         <td>${a.tls ? t('common.yes') : t('common.no')}</td>
         <td>${a.last_checked_at ? fmtTime(a.last_checked_at, 'date') : '-'}</td>
         <td>
-          ${iconBtn('test', t('common.test'), `return testImapAccount('${esc(a.id)}')`, 'blue')}
-          ${iconBtn('trash', t('common.delete'), `return deleteImapAccount('${esc(a.id)}')`, 'danger')}
+          ${iconBtn('test', t('common.test'), `return testImapAccount(${jsArg(a.id)})`, 'blue')}
+          ${iconBtn('trash', t('common.delete'), `return deleteImapAccount(${jsArg(a.id)})`, 'danger')}
         </td>
       </tr>
     `).join('');
@@ -4305,10 +4341,10 @@ function renderOlTable(rows) {
     const typeLabel = a.account_type === 'long' ? t('outlook.long') : t('outlook.short');
     const typeClass = a.account_type === 'long' ? 'badge-active' : 'badge-provider';
     const completeButton = isNoToken || isPendingOauth
-      ? iconBtn('check', t('outlook.complete_oauth'), `return startOutlookOauth('${esc(a.email)}')`, 'blue')
+      ? iconBtn('check', t('outlook.complete_oauth'), `return startOutlookOauth(${jsArg(a.email)})`, 'blue')
       : '';
     const passwordButton = isNoToken || isPendingOauth
-      ? iconBtn('copy', t('outlook.copy_password'), `return copyOutlookOauthPassword('${esc(a.email)}')`, 'amber')
+      ? iconBtn('copy', t('outlook.copy_password'), `return copyOutlookOauthPassword(${jsArg(a.email)})`, 'amber')
       : '';
     return `<tr>
       <td><input type="checkbox" class="ol-check" value="${esc(a.email)}"></td>
@@ -4319,12 +4355,12 @@ function renderOlTable(rows) {
       <td style="font-size:var(--text-base)">${esc(a.group_name || '-')}</td>
       <td class="time">${fmtTime(a.token_renewed_at, 'date')}</td>
       <td>
-        ${a.last_inbox_id ? iconBtn('inbox', t('inbox.receive'), `return switchAndView('${esc(a.last_inbox_id)}')`, 'blue') : ''}
+        ${a.last_inbox_id ? iconBtn('inbox', t('inbox.receive'), `return switchAndView(${jsArg(a.last_inbox_id)})`, 'blue') : ''}
         ${passwordButton}
         ${completeButton}
-        ${!completeButton ? iconBtn('search', t('outlook.check'), `return checkSingleOl('${esc(a.email)}')`, 'blue') : ''}
-        ${!completeButton ? iconBtn('refresh', t('outlook.renew'), `return renewSingleOl('${esc(a.email)}')`, 'amber') : ''}
-        ${!a.assigned_inbox_id ? iconBtn('trash', t('common.delete'), `return deleteOlAccount('${esc(a.email)}')`, 'danger') : ''}
+        ${!completeButton ? iconBtn('search', t('outlook.check'), `return checkSingleOl(${jsArg(a.email)})`, 'blue') : ''}
+        ${!completeButton ? iconBtn('refresh', t('outlook.renew'), `return renewSingleOl(${jsArg(a.email)})`, 'amber') : ''}
+        ${!a.assigned_inbox_id ? iconBtn('trash', t('common.delete'), `return deleteOlAccount(${jsArg(a.email)})`, 'danger') : ''}
       </td>
     </tr>`;
   }).join('') : `<tr><td class="empty-row" colspan="8">${t('outlook.no_data')}</td></tr>`;
@@ -4622,7 +4658,7 @@ async function batchRenewOutlook() {
 async function deleteOlAccount(email) {
   showDialog(t('dialog.confirm_delete'), `<p>${t('dialog.delete_account', {name: esc(email)})}<br><span style="font-size:var(--text-base);color:var(--text3)">${t('dialog.delete_account_hint')}</span></p>`, `
     <button class="btn" data-no-loading onclick="return hideDialog()">${t('common.cancel')}</button>
-    <button class="btn btn-danger" onclick="return doDeleteOl('${esc(email)}')">${t('dialog.confirm_delete')}</button>
+    <button class="btn btn-danger" onclick="return doDeleteOl(${jsArg(email)})">${t('dialog.confirm_delete')}</button>
   `);
 }
 
@@ -4741,22 +4777,22 @@ function renderKeyTable(rows) {
       <td style="font-weight:var(--fw-medium)">${esc(k.name)}</td>
       <td>
         <div class="key-secret">
-          <span class="mono key-secret-value" onclick="return copyKeySecret('${esc(k.keyHash)}')" title="${t('inbox.click_copy')}">${esc(_visibleKeyHashes.has(k.keyHash) ? k.key : maskKey(k.key))}</span>
-          ${iconBtn(_visibleKeyHashes.has(k.keyHash) ? 'eye-off' : 'eye', _visibleKeyHashes.has(k.keyHash) ? t('key.hide') : t('key.show'), `return toggleKeySecret('${esc(k.keyHash)}')`, 'blue')}
-          ${iconBtn('copy', t('common.copy'), `return copyKeySecret('${esc(k.keyHash)}')`, 'blue')}
+          <span class="mono key-secret-value" onclick="return copyKeySecret(${jsArg(k.keyHash)})" title="${t('inbox.click_copy')}">${esc(_visibleKeyHashes.has(k.keyHash) ? k.key : maskKey(k.key))}</span>
+          ${iconBtn(_visibleKeyHashes.has(k.keyHash) ? 'eye-off' : 'eye', _visibleKeyHashes.has(k.keyHash) ? t('key.hide') : t('key.show'), `return toggleKeySecret(${jsArg(k.keyHash)})`, 'blue')}
+          ${iconBtn('copy', t('common.copy'), `return copyKeySecret(${jsArg(k.keyHash)})`, 'blue')}
         </div>
       </td>
       <td style="text-align:center">${k.callCount}</td>
-      <td><div style="display:flex;align-items:center;justify-content:center;gap:4px"><input type="number" min="0" placeholder="${t('provider.no_limit')}" value="${k.dailyLimit ?? ''}" style="width:80px;text-align:center" onchange="setKeyQuota('${esc(k.keyHash)}',this.value)">${k.dailyLimit != null ? `<span style="font-size:var(--text-xs);color:var(--text3);white-space:nowrap">${k.dailyCalls}/${k.dailyLimit}</span>` : ''}</div></td>
+      <td><div style="display:flex;align-items:center;justify-content:center;gap:4px"><input type="number" min="0" placeholder="${t('provider.no_limit')}" value="${k.dailyLimit ?? ''}" style="width:80px;text-align:center" onchange="setKeyQuota(${jsArg(k.keyHash)},this.value)">${k.dailyLimit != null ? `<span style="font-size:var(--text-xs);color:var(--text3);white-space:nowrap">${k.dailyCalls}/${k.dailyLimit}</span>` : ''}</div></td>
       <td class="time">${k.lastUsedAt ? fmtTime(k.lastUsedAt, 'date') : t('common.never')}</td>
       <td>
         <label class="toggle">
-          <input type="checkbox" ${k.active ? 'checked' : ''} onchange="toggleKey('${esc(k.keyHash)}',this.checked)">
+          <input type="checkbox" ${k.active ? 'checked' : ''} onchange="toggleKey(${jsArg(k.keyHash)},this.checked)">
           <div class="toggle-track"></div>
           <div class="toggle-thumb"></div>
         </label>
       </td>
-      <td>${iconBtn('trash', t('common.delete'), `return deleteKey('${esc(k.keyHash)}','${esc(k.name)}')`, 'danger')}</td>    </tr>
+      <td>${iconBtn('trash', t('common.delete'), `return deleteKey(${jsArg(k.keyHash)},${jsArg(k.name)})`, 'danger')}</td>    </tr>
   `).join('') : `<tr><td class="empty-row" colspan="7">${t('op.no_keys_short')}</td></tr>`;
 }
 
@@ -4801,7 +4837,7 @@ async function setKeyQuota(key, val) {
 async function deleteKey(key, name) {
   showDialog(t('dialog.confirm_delete'), `<p>${t('dialog.delete_account', {name: esc(name)})}</p>`, `
     <button class="btn" data-no-loading onclick="return hideDialog()">${t('common.cancel')}</button>
-    <button class="btn btn-danger" onclick="return doDeleteKey('${esc(key)}')">${t('dialog.confirm_delete')}</button>
+    <button class="btn btn-danger" onclick="return doDeleteKey(${jsArg(key)})">${t('dialog.confirm_delete')}</button>
   `);
 }
 
@@ -4880,11 +4916,11 @@ function renderTplTable(rows) {
       <td>${esc(p.name)}</td>
       <td>${esc(p.apiBase || '')}</td>
       <td>${p.trustLevel || 1}</td>
-      <td><span class="badge ${stClass}" style="cursor:pointer" onclick="return toggleTpl('${esc(p.name)}',${!p.enabled})">${stText}</span></td>
+      <td><span class="badge ${stClass}" style="cursor:pointer" onclick="return toggleTpl(${jsArg(p.name)},${!p.enabled})">${stText}</span></td>
       <td>
-        ${iconBtn('edit', t('common.edit'), `return editTpl('${esc(p.name)}')`, 'blue')}
-        ${iconBtn('test', t('common.test'), `return testTpl('${esc(p.name)}')`, 'blue')}
-        ${iconBtn('trash', t('common.delete'), `return deleteTpl('${esc(p.name)}')`, 'danger')}
+        ${iconBtn('edit', t('common.edit'), `return editTpl(${jsArg(p.name)})`, 'blue')}
+        ${iconBtn('test', t('common.test'), `return testTpl(${jsArg(p.name)})`, 'blue')}
+        ${iconBtn('trash', t('common.delete'), `return deleteTpl(${jsArg(p.name)})`, 'danger')}
       </td>
     </tr>`;
   }).join('') : `<tr><td class="empty-row" colspan="6">${t('common.no_data')}</td></tr>`;
@@ -5185,7 +5221,7 @@ async function loadBackups() {
       <td class="mono">${esc(b.filename)}</td>
       <td>${fmtBytes(b.size)}</td>
       <td class="time">${fmtTime(b.createdAt, 'date')}</td>
-      <td>${iconBtn('trash', t('common.delete'), `return deleteBackup('${esc(b.filename)}')`, 'danger')}</td>
+      <td>${iconBtn('trash', t('common.delete'), `return deleteBackup(${jsArg(b.filename)})`, 'danger')}</td>
     </tr>
   `).join('') : '<tr><td class="empty-row" colspan="4">暂无备份</td></tr>';
   return data;
