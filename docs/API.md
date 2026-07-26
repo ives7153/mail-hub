@@ -183,9 +183,19 @@ Retrieve messages in the inbox.
   ],
   "status": "active",
   "address": "user@domain.com",
-  "provider": "mailtm"
+  "provider": "mailtm",
+  "accountEmail": "user@outlook.com"
 }
 ```
+
+Pool providers hand out mailboxes that already hold a previous tenant's mail, so
+this list is clipped to the inbox's own lifetime (`created_at`, minus 60s of
+clock slack). Mail that predates the inbox is not returned even though it is
+still sitting in the upstream mailbox.
+
+`accountEmail` is present only for Outlook, where one mailbox serves one inbox at
+a time; it names the pool account so an admin client can reach
+[the mailbox view](#get-apioutlookaccountsemailmailbox--account-mailbox).
 
 **Errors**: 400 (no polling support), 404, 429 (rate limit), 502 (upstream error)
 
@@ -193,7 +203,9 @@ Retrieve messages in the inbox.
 
 ### GET /api/inbox/:id/messages/:mid — Message Detail
 
-Get full message content including body.
+Get full message content including body. The same lifetime boundary applies:
+message ids stay valid across mailbox reuse, so a message from outside this
+inbox's lifetime returns 404 rather than a previous tenant's content.
 
 **Response 200**:
 ```json
@@ -771,6 +783,78 @@ Supported formats per line:
 ```
 
 Only accounts with `client_id`, `refresh_token`, no assignment, and a non-pending/non-invalid token status are considered available for inbox allocation.
+
+### GET /api/outlook/accounts/:email/mailbox — Account Mailbox
+
+Read the whole mailbox behind a pool account, rather than one inbox's clipped
+view of it. `GET /api/inbox/:id/messages` returns only what arrived during that
+inbox's lifetime — deliberately, since a recycled account arrives holding the
+previous tenant's mail. This endpoint answers the other question: what else is in
+this mailbox. Admin only.
+
+**Query parameters**: `limit=1..100` (default 50)
+
+**Response 200**:
+```json
+{
+  "email": "user@outlook.com",
+  "limit": 50,
+  "truncated": false,
+  "messages": [
+    {
+      "id": "msg-id",
+      "from": "Steam <noreply@steampowered.com>",
+      "subject": "Your Steam code",
+      "excerpt": "",
+      "receivedAt": "2026-07-27T14:03:11Z",
+      "leaseId": "i-abc123",
+      "leaseState": "lease"
+    }
+  ],
+  "leases": [
+    {
+      "id": "i-abc123",
+      "address": "user+ab12cd34@outlook.com",
+      "targetService": "steam",
+      "createdAt": "2026-07-27 14:02:00",
+      "endedAt": null,
+      "status": "active"
+    }
+  ]
+}
+```
+
+Every message is attributed to the inbox that held the mailbox when it arrived:
+
+| `leaseState` | Meaning |
+|---|---|
+| `lease` | Arrived during `leaseId`'s window |
+| `gap` | Arrived while the account sat idle between leases |
+| `before` | Older than the account's first lease |
+| `undated` | No parseable timestamp; kept rather than dropped |
+
+A lease's window ends at whichever came first: `closed_at`, `expires_at` (only a
+fallback, for rows closed before `closed_at` was recorded), or the moment the
+next lease took the account.
+
+`limit` is a hard ceiling, not paging: the newest `limit` of Inbox and Junk are
+fetched and merged down to `limit`. Older mail exists upstream and is not
+reachable from here; `truncated` is `true` when the cap was hit.
+
+**Errors**: 403 (not admin), 404 (no such account), 502 (upstream error)
+
+---
+
+### GET /api/outlook/accounts/:email/mailbox/:messageId — Mailbox Message Detail
+
+Full content of one message from the account mailbox, not clipped to any lease.
+Admin only.
+
+**Response 200**: same shape as `GET /api/inbox/:id/messages/:mid`.
+
+**Errors**: 403 (not admin), 404 (no such account), 502 (upstream error)
+
+---
 
 ### DELETE /api/outlook/accounts — Delete Unassigned Accounts
 

@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { allRows, getDb, getRow, getSetting, logActivity, setSetting } from '../db.js';
-import { checkToken, OAuthRejectedError, renewToken } from '../providers/outlook.js';
+import { checkToken, fetchAccountMailbox, fetchAccountMessage, OAuthRejectedError, renewToken } from '../providers/outlook.js';
+import { parseInboxTimestamp } from '../inbox-lifecycle.js';
 import { requireAdmin, type AdminEnv } from './admin.js';
 import { importDelimited } from '../import-utils.js';
 import { fetchWithTimeout, runConcurrent } from '../utils.js';
@@ -656,6 +657,141 @@ outlookRoutes.get('/outlook/accounts', (c) => {
   const accounts = db.prepare(sql).all(...params);
 
   return c.json({ accounts });
+});
+
+/**
+ * Same slack isMessageWithinInboxLifetime() uses, for the same reason: the mail
+ * host's clock is not ours. Kept equal so a message the inbox view calls "mine"
+ * is never filed under a different lease here.
+ */
+const LEASE_SLACK_MS = 60000;
+
+const MAILBOX_DEFAULT_LIMIT = 50;
+const MAILBOX_MAX_LIMIT = 100;
+
+interface LeaseRow {
+  id: string;
+  address: string;
+  target_service: string | null;
+  created_at: string;
+  closed_at: string | null;
+  expires_at: string | null;
+  status: string;
+}
+
+interface Lease {
+  id: string;
+  address: string;
+  targetService: string | null;
+  createdAt: string;
+  endedAt: string | null;
+  status: string;
+  startMs: number;
+  endMs: number;
+}
+
+/**
+ * Every lease this account has served, newest first, each with the real window
+ * it owned the mailbox for.
+ *
+ * The end of a lease is whichever came first: it was closed (closed_at), it
+ * expired (expires_at — the PLANNED end, so only a fallback for rows closed
+ * before closed_at existed), or the account was handed to the next lease. That
+ * last cap is what makes rows with no recorded end still land somewhere honest:
+ * a lease can never have owned the mailbox past the moment the next one started.
+ */
+function accountLeases(email: string): Lease[] {
+  const rows = allRows<LeaseRow>(
+    getDb(),
+    `SELECT id, address, target_service, created_at, closed_at, expires_at, status
+     FROM inboxes
+     WHERE provider = 'outlook' AND COALESCE(json_extract(auth_data, '$.email'), address) = ?
+     ORDER BY datetime(created_at) DESC`,
+    email,
+  );
+
+  const leases: Lease[] = [];
+  for (const [index, row] of rows.entries()) {
+    const startMs = parseInboxTimestamp(row.created_at) - LEASE_SLACK_MS;
+    const recordedEnd = row.status === 'active' ? '' : (row.closed_at || row.expires_at || '');
+    const explicitEnd = recordedEnd ? parseInboxTimestamp(recordedEnd) : Infinity;
+    // rows are newest-first, so the lease that superseded this one is at index-1.
+    const nextStart = index > 0 ? leases[index - 1].startMs : Infinity;
+    const endMs = Math.max(startMs, Math.min(explicitEnd || Infinity, nextStart));
+    leases.push({
+      id: row.id,
+      address: row.address,
+      targetService: row.target_service,
+      createdAt: row.created_at,
+      endedAt: Number.isFinite(endMs) ? new Date(endMs).toISOString() : null,
+      status: row.status,
+      startMs,
+      endMs,
+    });
+  }
+  return leases;
+}
+
+type LeaseState = 'lease' | 'gap' | 'before' | 'undated';
+
+function classifyMessage(receivedAt: string | undefined, leases: Lease[]): { leaseId: string | null; leaseState: LeaseState } {
+  if (!receivedAt) return { leaseId: null, leaseState: 'undated' };
+  const t = Date.parse(receivedAt);
+  if (!Number.isFinite(t)) return { leaseId: null, leaseState: 'undated' };
+  for (const lease of leases) {
+    if (t >= lease.startMs && t <= lease.endMs) return { leaseId: lease.id, leaseState: 'lease' };
+  }
+  const oldest = leases[leases.length - 1];
+  if (oldest && t < oldest.startMs) return { leaseId: null, leaseState: 'before' };
+  return { leaseId: null, leaseState: 'gap' };
+}
+
+/**
+ * The account's mailbox, not an inbox's view of it. An inbox is a lease and its
+ * message list stays clipped to that lease — widening it would put a previous
+ * tenant's verification codes back in front of a caller. This route answers the
+ * other question, "what else is in this mailbox", and only for an admin (the
+ * whole /outlook/* tree is behind requireAdmin).
+ *
+ * `limit` is a real ceiling, not paging: Graph is asked for the newest N of
+ * Inbox and Junk each, merged down to N. Older mail exists upstream and is not
+ * reachable from here.
+ */
+outlookRoutes.get('/outlook/accounts/:email/mailbox', async (c) => {
+  const email = c.req.param('email');
+  const exists = getRow<{ email: string }>(getDb(), `SELECT email FROM outlook_accounts WHERE email = ?`, email);
+  if (!exists) return c.json({ error: 'Outlook account not found' }, 404);
+
+  const requested = parseInt(c.req.query('limit') || '', 10);
+  const limit = Number.isFinite(requested)
+    ? Math.min(MAILBOX_MAX_LIMIT, Math.max(1, requested))
+    : MAILBOX_DEFAULT_LIMIT;
+
+  const leases = accountLeases(email);
+
+  try {
+    const messages = await fetchAccountMailbox(email, limit);
+    return c.json({
+      email,
+      limit,
+      truncated: messages.length >= limit,
+      messages: messages.map((m) => ({ ...m, ...classifyMessage(m.receivedAt, leases) })),
+      leases: leases.map(({ startMs: _s, endMs: _e, ...rest }) => rest),
+    });
+  } catch (e) {
+    return c.json({ error: errorMessage(e) }, 502);
+  }
+});
+
+outlookRoutes.get('/outlook/accounts/:email/mailbox/:mid', async (c) => {
+  const email = c.req.param('email');
+  const exists = getRow<{ email: string }>(getDb(), `SELECT email FROM outlook_accounts WHERE email = ?`, email);
+  if (!exists) return c.json({ error: 'Outlook account not found' }, 404);
+  try {
+    return c.json(await fetchAccountMessage(email, c.req.param('mid')));
+  } catch (e) {
+    return c.json({ error: errorMessage(e) }, 502);
+  }
 });
 
 outlookRoutes.delete('/outlook/accounts', async (c) => {

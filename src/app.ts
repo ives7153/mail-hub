@@ -512,7 +512,7 @@ export async function cleanupExpired(): Promise<void> {
       WHERE status = 'active' AND expires_at IS NOT NULL AND datetime(expires_at) < datetime('now')
     `);
     if (expired.length > 0) {
-      const close = db.prepare(`UPDATE inboxes SET status = 'closed' WHERE id = ?`);
+      const close = db.prepare(`UPDATE inboxes SET status = 'closed', closed_at = datetime('now') WHERE id = ?`);
       for (const row of expired) close.run(row.id);
       for (const row of expired) {
         try {

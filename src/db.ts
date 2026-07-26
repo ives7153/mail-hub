@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS inboxes (
   owner_key TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   expires_at TEXT,
+  closed_at TEXT,
   status TEXT NOT NULL DEFAULT 'active'
 );
 
@@ -224,6 +225,12 @@ export function initDb(): Database.Database {
     `ALTER TABLE outlook_accounts ADD COLUMN oauth_last_session_id TEXT`,
     `ALTER TABLE outlook_accounts ADD COLUMN oauth_last_error TEXT`,
     `ALTER TABLE outlook_oauth_sessions ADD COLUMN preset TEXT NOT NULL DEFAULT 'custom'`,
+    // When a lease actually ended. expires_at is only ever the PLANNED end, so
+    // an early manual close leaves it in the future; the mailbox view needs the
+    // real boundary to tell "arrived during this lease" from "arrived after it
+    // was released". NULL on rows closed before this column existed, which
+    // callers must read as "end unknown", not "still open".
+    `ALTER TABLE inboxes ADD COLUMN closed_at TEXT`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (e) {

@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { BaseProvider, PROVIDER, type InboxData, type Message, type MessageDetail, type ProviderMeta } from './base.js';
 import { allRows, getDb, getRow } from '../db.js';
 import { createConnection } from 'net';
@@ -53,8 +53,18 @@ const ALLOCABLE_ACCOUNT_WHERE = `assigned_inbox_id IS NULL
   AND refresh_token != ''
   AND COALESCE(token_status, '') NOT IN ('invalid', 'no_token', 'pending_oauth')`;
 
+/**
+ * Two accounts in the pool routinely share a client_id, so the refresh token is
+ * the only thing telling their cached access tokens apart — and an access token
+ * IS the mailbox. This used to key on `refreshToken.slice(-8)`, which throws
+ * away all but 8 characters: two accounts whose tokens end alike collide, and
+ * the second one is served the first one's mail. Real Microsoft tokens make that
+ * astronomically unlikely, but the truncation bought nothing (this is an
+ * in-memory map key, not storage), and "unlikely cross-account mail mixing" is
+ * not a property worth keeping. Hash the whole token.
+ */
 function cacheKey(clientId: string, refreshToken: string): string {
-  return `${clientId}:${refreshToken.slice(-8)}`;
+  return `${clientId}:${createHash('sha256').update(refreshToken).digest('hex')}`;
 }
 
 /**
@@ -179,34 +189,34 @@ async function fetchMailsBothApis(accessToken: string, apiType: string, count = 
       fetchMailsGraph(accessToken, OUTLOOK_INBOX_URL, count),
       fetchMailsGraph(accessToken, OUTLOOK_JUNK_URL, count),
     ]);
-    return { messages: mergeMessages(inboxMsgs, junkMsgs), apiType: 'outlook' };
+    return { messages: mergeMessages(inboxMsgs, junkMsgs, count), apiType: 'outlook' };
   }
   try {
     const [inboxMsgs, junkMsgs] = await Promise.all([
       fetchMailsGraph(accessToken, GRAPH_INBOX_URL, count),
       fetchMailsGraph(accessToken, GRAPH_JUNK_URL, count),
     ]);
-    return { messages: mergeMessages(inboxMsgs, junkMsgs), apiType: 'graph' };
+    return { messages: mergeMessages(inboxMsgs, junkMsgs, count), apiType: 'graph' };
   } catch (e) {
     if (errorMessage(e).includes('401')) {
       const [inboxMsgs, junkMsgs] = await Promise.all([
         fetchMailsGraph(accessToken, OUTLOOK_INBOX_URL, count),
         fetchMailsGraph(accessToken, OUTLOOK_JUNK_URL, count),
       ]);
-      return { messages: mergeMessages(inboxMsgs, junkMsgs), apiType: 'outlook' };
+      return { messages: mergeMessages(inboxMsgs, junkMsgs, count), apiType: 'outlook' };
     }
     throw e;
   }
 }
 
-function mergeMessages(inboxMsgs: GraphMessage[], junkMsgs: GraphMessage[]): GraphMessage[] {
+function mergeMessages(inboxMsgs: GraphMessage[], junkMsgs: GraphMessage[], limit = 20): GraphMessage[] {
   const merged = new Map<string, GraphMessage>();
   for (const m of [...inboxMsgs, ...junkMsgs]) {
     if (!merged.has(m.id)) merged.set(m.id, m);
   }
   return [...merged.values()]
     .sort((a, b) => (b.receivedDateTime || '').localeCompare(a.receivedDateTime || ''))
-    .slice(0, 20);
+    .slice(0, limit);
 }
 
 async function fetchSingleMessage(accessToken: string, messageId: string, apiType: string): Promise<GraphMessage> {
@@ -272,6 +282,69 @@ function graphMsgToDetail(normalized: GraphMessage): MessageDetail {
  */
 function accountEmailOf(inbox: InboxData): string {
   return inbox.authData.email || stripPlusTag(inbox.address);
+}
+
+/**
+ * One access-token attempt with a single retry after evicting the cache on 401,
+ * which is the only failure a fresh token can fix. Both the inbox path and the
+ * account-mailbox path funnel through here so the retry, the api_type probe and
+ * its write-back cannot drift apart.
+ */
+async function withAccessToken<T>(clientId: string, refreshToken: string, run: (token: string) => Promise<T>): Promise<T> {
+  const accessToken = await obtainAccessToken(clientId, refreshToken);
+  try {
+    return await run(accessToken);
+  } catch (e) {
+    if (!errorMessage(e).includes('401')) throw e;
+    evictCachedToken(clientId, refreshToken);
+    return run(await obtainAccessToken(clientId, refreshToken));
+  }
+}
+
+async function pollMailbox(email: string, clientId: string, refreshToken: string, limit: number): Promise<Message[]> {
+  const db = getDb();
+  const apiType = getRow<{ api_type: string }>(db, `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
+  return withAccessToken(clientId, refreshToken, async (token) => {
+    const result = await fetchMailsBothApis(token, apiType, limit);
+    if (result.apiType && result.apiType !== apiType) {
+      db.prepare(`UPDATE outlook_accounts SET api_type = ? WHERE email = ?`).run(result.apiType, email);
+    }
+    return result.messages.map(graphMsgToMessage);
+  });
+}
+
+async function readMailboxMessage(email: string, clientId: string, refreshToken: string, messageId: string): Promise<MessageDetail> {
+  const apiType = getRow<{ api_type: string }>(getDb(), `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
+  return withAccessToken(clientId, refreshToken, async (token) => graphMsgToDetail(await fetchSingleMessage(token, messageId, apiType)));
+}
+
+function accountCredentials(email: string): { clientId: string; refreshToken: string } {
+  const row = getRow<{ client_id: string; refresh_token: string }>(
+    getDb(),
+    `SELECT client_id, refresh_token FROM outlook_accounts WHERE email = ?`,
+    email,
+  );
+  if (!row) throw new Error(`Outlook 账号不存在: ${email}`);
+  if (!row.client_id || !row.refresh_token) throw new Error(`Outlook 账号 ${email} 缺少令牌凭据`);
+  return { clientId: row.client_id, refreshToken: row.refresh_token };
+}
+
+/**
+ * The whole mailbox behind an account, with no inbox lease in the picture.
+ * An inbox is a lease over this mailbox, so its message list is deliberately
+ * clipped to the lease window (isMessageWithinInboxLifetime) — that boundary is
+ * a tenant boundary and must never be widened. Seeing what else is in the
+ * mailbox is a different question, asked of the account, and answerable only to
+ * an admin. Bounded by `limit` because Graph pages and we do not.
+ */
+export async function fetchAccountMailbox(email: string, limit = 50): Promise<Message[]> {
+  const { clientId, refreshToken } = accountCredentials(email);
+  return pollMailbox(email, clientId, refreshToken, limit);
+}
+
+export async function fetchAccountMessage(email: string, messageId: string): Promise<MessageDetail> {
+  const { clientId, refreshToken } = accountCredentials(email);
+  return readMailboxMessage(email, clientId, refreshToken, messageId);
 }
 
 export class OutlookProvider extends BaseProvider {
@@ -392,53 +465,15 @@ export class OutlookProvider extends BaseProvider {
   }
 
   async getMessages(inbox: InboxData): Promise<Message[]> {
-    const { clientId } = inbox.authData;
     const email = accountEmailOf(inbox);
     const freshToken = this.getFreshRefreshToken(email) || inbox.authData.refreshToken;
-    const db = getDb();
-    const apiType = getRow<{ api_type: string }>(db, `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
-    let accessToken = await obtainAccessToken(clientId, freshToken);
-
-    try {
-      const result = await fetchMailsBothApis(accessToken, apiType);
-      if (result.apiType && result.apiType !== apiType) {
-        db.prepare(`UPDATE outlook_accounts SET api_type = ? WHERE email = ?`).run(result.apiType, email);
-      }
-      return result.messages.map(graphMsgToMessage);
-    } catch (e) {
-      if (errorMessage(e).includes('401')) {
-        evictCachedToken(clientId, freshToken);
-        accessToken = await obtainAccessToken(clientId, freshToken);
-        const result = await fetchMailsBothApis(accessToken, apiType);
-        if (result.apiType && result.apiType !== apiType) {
-          db.prepare(`UPDATE outlook_accounts SET api_type = ? WHERE email = ?`).run(result.apiType, email);
-        }
-        return result.messages.map(graphMsgToMessage);
-      }
-      throw e;
-    }
+    return pollMailbox(email, inbox.authData.clientId, freshToken, 20);
   }
 
   async getMessage(inbox: InboxData, messageId: string): Promise<MessageDetail> {
-    const { clientId } = inbox.authData;
     const email = accountEmailOf(inbox);
     const freshToken = this.getFreshRefreshToken(email) || inbox.authData.refreshToken;
-    const apiType = getRow<{ api_type: string }>(getDb(), `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
-
-    let accessToken = await obtainAccessToken(clientId, freshToken);
-
-    try {
-      const msg = await fetchSingleMessage(accessToken, messageId, apiType);
-      return graphMsgToDetail(msg);
-    } catch (e) {
-      if (errorMessage(e).includes('401')) {
-        evictCachedToken(clientId, freshToken);
-        accessToken = await obtainAccessToken(clientId, freshToken);
-        const msg = await fetchSingleMessage(accessToken, messageId, apiType);
-        return graphMsgToDetail(msg);
-      }
-      throw e;
-    }
+    return readMailboxMessage(email, inbox.authData.clientId, freshToken, messageId);
   }
 
   async deleteInbox(inbox: InboxData): Promise<void> {

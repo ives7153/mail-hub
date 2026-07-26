@@ -233,11 +233,20 @@ inboxRoutes.get('/inbox/:id/messages', async (c) => {
   }
 
   const inboxCreatedAt = parseInboxTimestamp(row.created_at);
+  const inbox = rowToInboxData(row);
+  // The account behind the lease, so a client can offer the mailbox view without
+  // guessing it back out of an alias address. Outlook only: it is the one pool
+  // where a mailbox serves exactly one lease at a time, so showing the rest of
+  // it exposes nothing that is not this same caller's history. YYDS keys and
+  // IMAP catch-alls are shared across concurrent inboxes and get no such link.
+  const accountEmail = providerName === PROVIDER.OUTLOOK
+    ? (inbox.authData.email || stripPlusTag(address))
+    : undefined;
 
   try {
-    const messages = await pollProvider(providerName, provider, rowToInboxData(row));
+    const messages = await pollProvider(providerName, provider, inbox);
     const own = messages.filter((m) => isMessageWithinInboxLifetime(m.receivedAt, inboxCreatedAt));
-    return c.json({ messages: own, status, address, provider: providerName });
+    return c.json({ messages: own, status, address, provider: providerName, accountEmail });
   } catch (e) {
     if (e instanceof PollRateLimitError) return pollRateLimitResponse(c, e);
     return c.json({ error: errorMessage(e) }, 502);
@@ -381,7 +390,7 @@ inboxRoutes.delete('/inbox/:id', async (c) => {
   const claimParams: QueryParam[] = [id];
   let claimSql = `
     UPDATE inboxes
-    SET status = 'closed'
+    SET status = 'closed', closed_at = datetime('now')
     WHERE id = ? AND status != 'closed'
   `;
   if (!c.get('isAdmin')) {

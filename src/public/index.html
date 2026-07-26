@@ -370,8 +370,68 @@ select{cursor:pointer}
 .msg-header{border-bottom:1px solid var(--border);padding-bottom:10px;margin-bottom:10px}
 .msg-header h3{font-size:var(--text-lg);font-weight:var(--fw-semibold);margin-bottom:4px}
 .msg-header p{font-size:var(--text-base);color:var(--text3)}
-.msg-body{font-size:var(--text-md);line-height:1.6;max-height:360px;overflow-y:auto}
-.msg-body iframe{width:100%;min-height:200px;border:none;background:#fff;border-radius:4px}
+/* Height is set by fitMsgBody() — content height, capped at ~65vh. Deliberately
+   no max-height: it would also cap the resize handle, and the handle is the
+   whole point of being able to drag a long mail open. */
+.msg-body{font-size:var(--text-md);line-height:1.6;min-height:120px;overflow:auto;resize:vertical}
+.msg-body iframe{width:100%;border:none;background:#fff;border-radius:4px;display:block}
+
+/* ─── Inboxes: list mode ⇄ detail mode ───
+   The detail panel used to render BELOW a create form and a 20-row table, so
+   opening an inbox put its messages off screen and every click ended in a
+   scroll. The two are modes of one page instead: whichever you are looking at
+   gets the whole width, and the crumb is the way back. No media query, no
+   cramped columns, and the scroll position of the list is restored on return. */
+#v-inboxes.detail-mode .list-only { display: none; }
+#v-inboxes:not(.detail-mode) .detail-only { display: none; }
+/* display:none cannot be transitioned, so the side being left has to fade out
+   BEFORE the swap — otherwise the hard cut is the loudest thing on screen and
+   swamps whatever the incoming panel is doing. .leaving is worn by the view for
+   one beat, then the mode flips. */
+#v-inboxes.leaving .list-only,
+#v-inboxes.leaving .detail-only{opacity:0;transform:translateY(-6px);pointer-events:none;transition:opacity var(--dur-quick) var(--ease-out),transform var(--dur-quick) var(--ease-out)}
+
+.crumb{display:inline-flex;align-items:center;gap:8px;background:none;border:none;color:var(--text3);font-family:inherit;font-size:var(--text-md);padding:6px 2px;margin-bottom:10px;cursor:pointer;transition:color var(--dur-fast) var(--ease-out)}
+.crumb:hover{color:var(--text1)}
+.crumb-arrow{transition:transform var(--dur-fast) var(--ease-out)}
+.crumb:hover .crumb-arrow{transform:translateX(-3px)}
+
+/* ─── Collapsible panel ─── */
+.collapsible .panel-header{cursor:pointer;user-select:none}
+.collapse-caret{display:inline-block;width:0;height:0;margin-right:8px;vertical-align:middle;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;transform:rotate(90deg);transition:transform var(--dur-fast) var(--ease-out);opacity:.55}
+.collapsible.collapsed .collapse-caret{transform:rotate(0deg)}
+.collapsible.collapsed > *:not(.panel-header){display:none}
+
+/* ─── Mailbox (account-level) lease dividers ─── */
+.lease-sep td{background:var(--control-bg);padding:7px 12px;font-size:var(--text-base);color:var(--text3)}
+.lease-sep .lease-name{font-weight:var(--fw-semibold);color:var(--text2)}
+/* The indicator is a real element rather than a background on .active, so it
+   can slide between tabs. syncScopeIndicator() measures and places it; the tab
+   click moves it immediately, before the fetch resolves, so the switch responds
+   at once and the new content fades in when it arrives. */
+.scope-tabs{position:relative;display:inline-flex;gap:4px;background:var(--control-bg);border:1px solid var(--border);border-radius:var(--radius);padding:3px}
+.scope-ind{position:absolute;top:3px;bottom:3px;left:0;width:0;background:var(--panel-bg);border-radius:calc(var(--radius) - 3px);box-shadow:0 1px 2px rgba(0,0,0,.07);transition:left var(--dur-fast) var(--ease-out),width var(--dur-fast) var(--ease-out);pointer-events:none}
+.scope-tab{position:relative;z-index:1;border:none;background:none;color:var(--text3);font-size:var(--text-base);padding:4px 12px;border-radius:calc(var(--radius) - 3px);cursor:pointer;font-family:inherit;transition:color var(--dur-fast) var(--ease-out)}
+.scope-tab:hover{color:var(--text2)}
+.scope-tab.active{color:var(--text1);font-weight:var(--fw-medium)}
+
+/* ─── Message body, expanded in place under its own row ─── */
+.msg-expand > td{padding:0;border-top:none}
+.msg-expand-wrap{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--dur-med) var(--ease-out)}
+.msg-expand-wrap > div{min-height:0;overflow:hidden}
+.msg-expand.open .msg-expand-wrap{grid-template-rows:1fr}
+
+@keyframes panel-in{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+/* `backwards`, NOT `both`: with `both` the animation pins its end state forever
+   and outranks any later transition, so the panel could never be faded back
+   out. `backwards` only covers the frames before the animation starts, which is
+   all the flash protection this needs. */
+.detail-panel{animation:panel-in var(--dur-med) var(--ease-out) backwards}
+/* Swapping panels inside detail mode (scope tabs, refresh) replaced the old one
+   in a single frame while the new one arrived at a wildly different height —
+   276px to 1370px between two frames. Fading the outgoing panel first means the
+   resize happens with nothing visible sitting on it. */
+.detail-panel.panel-leaving{animation:none;opacity:0;transform:translateY(-6px);transition:opacity var(--dur-quick) var(--ease-out),transform var(--dur-quick) var(--ease-out)}
 
 /* ─── Code display ─── */
 .code-box{background:var(--control-bg);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:12px}
@@ -578,6 +638,8 @@ tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--emerald)}
   .btn-primary:hover { transform: none !important; }
   .nav-icon.spinning svg { animation: none !important; }
   .btn[data-loading]::after { animation: none !important; }
+  .detail-panel { animation: none !important; }
+  .scope-ind, .msg-expand-wrap, .crumb-arrow, .collapse-caret { transition: none !important; }
 }
 </style>
 </head>
@@ -710,7 +772,7 @@ tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--emerald)}
 
     <!-- ══════ Inboxes ══════ -->
     <div id="v-inboxes" class="view">
-      <div class="page-header">
+      <div class="page-header list-only">
         <div class="page-title-area"><h1 class="page-title" data-i18n="inbox.title">收件箱</h1></div>
         <div class="header-actions">
           <div class="filter-row">
@@ -720,8 +782,12 @@ tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--emerald)}
         </div>
       </div>
 
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title"><span data-i18n="inbox.create">Created inbox</span></span></div>
+      <button class="crumb detail-only" onclick="return exitInboxDetail()"><span class="crumb-arrow">&#8592;</span><span data-i18n="inbox.back_to_list">返回邮箱列表</span></button>
+
+      <div class="panel collapsible list-only" id="i-create-panel">
+        <div class="panel-header" onclick="return toggleCreatePanel()">
+          <span class="panel-title"><span class="collapse-caret"></span><span data-i18n="inbox.create">Created inbox</span></span>
+        </div>
         <div class="form-row">
           <div class="form-group"><label data-i18n="inbox.for">目标服务</label><input id="i-inbox-for" placeholder="twitter.com"></div>
           <div class="form-group"><label data-i18n="common.provider">渠道</label><select id="i-inbox-provider"><option value="" data-i18n="inbox.auto">自动调度</option></select></div>
@@ -733,7 +799,7 @@ tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--emerald)}
         <div id="i-inbox-result"></div>
       </div>
 
-      <div class="panel">
+      <div class="panel list-only">
         <div class="panel-header">
           <span class="panel-title" data-i18n="inbox.title">邮箱列表</span>
           <div class="panel-actions">
@@ -911,6 +977,7 @@ tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--emerald)}
             <a href="#doc-ol-stats" onclick="return scrollDoc(event)"><span class="method m-get">GET</span><span data-i18n="docs.nav_ol_stats">池统计</span></a>
             <a href="#doc-ol-import" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ol_import">导入账号</span></a>
             <a href="#doc-ol-list" onclick="return scrollDoc(event)"><span class="method m-get">GET</span><span data-i18n="docs.nav_ol_list">账号列表</span></a>
+            <a href="#doc-ol-mailbox" onclick="return scrollDoc(event)"><span class="method m-get">GET</span><span data-i18n="docs.nav_ol_mailbox">账号邮箱</span></a>
             <a href="#doc-ol-delete" onclick="return scrollDoc(event)"><span class="method m-delete">DEL</span><span data-i18n="docs.nav_ol_delete">删除账号</span></a>
             <a href="#doc-ol-check" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ol_check">检测令牌</span></a>
             <a href="#doc-ol-renew" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ol_renew">续期令牌</span></a>
@@ -1381,6 +1448,52 @@ tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--emerald)}
       <span class="ck">"created_at"</span>: <span class="cs">"..."</span>, <span class="ck">"token_renewed_at"</span>: <span class="cs">"..."</span> }
   ]
 }</pre>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ol-mailbox">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-get">GET</span>
+                <span class="path">/api/outlook/accounts/:email/mailbox</span>
+                <span class="desc" data-i18n="docs.ol_mailbox_desc">查看账号邮箱的全部邮件</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-label" data-i18n="docs.query_params">查询参数</div>
+                <table class="docs-param-table">
+                  <thead><tr><th data-i18n="docs.param">参数</th><th data-i18n="docs.type">类型</th><th data-i18n="docs.required">必填</th><th data-i18n="docs.description">说明</th></tr></thead>
+                  <tbody>
+                    <tr><td class="param-name">limit</td><td class="param-type">number</td><td><span class="param-req no" data-i18n="docs.no">否</span></td><td data-i18n="docs.ol_mailbox_param_limit">取回的邮件条数，默认 50，最大 100</td></tr>
+                  </tbody>
+                </table>
+                <div class="docs-label" data-i18n="docs.response_200">响应 200</div>
+                <pre class="docs-code">{
+  <span class="ck">"email"</span>: <span class="cs">"user@outlook.com"</span>, <span class="ck">"limit"</span>: <span class="cv">50</span>, <span class="ck">"truncated"</span>: <span class="cv">false</span>,
+  <span class="ck">"messages"</span>: [
+    { <span class="ck">"id"</span>: <span class="cs">"..."</span>, <span class="ck">"from"</span>: <span class="cs">"..."</span>, <span class="ck">"subject"</span>: <span class="cs">"..."</span>, <span class="ck">"receivedAt"</span>: <span class="cs">"..."</span>,
+      <span class="ck">"leaseId"</span>: <span class="cs">"i-abc123"</span>, <span class="ck">"leaseState"</span>: <span class="cs">"lease"</span> }
+  ],
+  <span class="ck">"leases"</span>: [
+    { <span class="ck">"id"</span>: <span class="cs">"i-abc123"</span>, <span class="ck">"address"</span>: <span class="cs">"user+tag@outlook.com"</span>, <span class="ck">"targetService"</span>: <span class="cs">"github"</span>,
+      <span class="ck">"createdAt"</span>: <span class="cs">"..."</span>, <span class="ck">"endedAt"</span>: <span class="cv">null</span>, <span class="ck">"status"</span>: <span class="cs">"active"</span> }
+  ]
+}</pre>
+                <div class="docs-note" data-i18n-html="docs.ol_mailbox_note">管理员专用。<code>/api/inbox/:id/messages</code> 只返回该邮箱在这一次租期内收到的邮件，这条接口返回整个账号邮箱。每封邮件带 <code>leaseState</code>：<code>lease</code>（属于 <code>leaseId</code> 那次租期）、<code>gap</code>（两次租期之间，账号空闲）、<code>before</code>（第一次租期之前）、<code>undated</code>（没有可解析的时间）。<code>limit</code> 是硬上限而不是分页：更早的邮件取不回来，取满时 <code>truncated</code> 为 <code>true</code>。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ol-mailbox-detail">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-get">GET</span>
+                <span class="path">/api/outlook/accounts/:email/mailbox/:messageId</span>
+                <span class="desc" data-i18n="docs.ol_mailbox_detail_desc">读取账号邮箱中的一封邮件</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-label" data-i18n="docs.response_200">响应 200</div>
+                <pre class="docs-code">{
+  <span class="ck">"id"</span>: <span class="cs">"..."</span>, <span class="ck">"from"</span>: <span class="cs">"..."</span>, <span class="ck">"subject"</span>: <span class="cs">"..."</span>,
+  <span class="ck">"receivedAt"</span>: <span class="cs">"..."</span>, <span class="ck">"text"</span>: <span class="cs">"..."</span>, <span class="ck">"html"</span>: <span class="cs">"..."</span>
+}</pre>
+                <div class="docs-note" data-i18n-html="docs.ol_mailbox_detail_note">管理员专用，不受租期限制。<code>/api/inbox/:id/messages/:mid</code> 对租期外的邮件返回 404，这条接口能打开它们。</div>
               </div>
             </div>
 
@@ -2527,13 +2640,15 @@ zh: {
 'pager.first':'首页','pager.prev':'上一页','pager.next':'下一页','pager.last':'末页','pager.page':'页','pager.items':'条','pager.per_page':'条/页',
 'status.normal':'系统正常','status.no_providers':'无可用渠道',
 'inbox.receive':'收信','inbox.extract':'提取','inbox.success':'成功','inbox.fail':'失败','inbox.close':'关闭','inbox.loading_mail':'加载邮件…','inbox.no_mail':'暂无邮件','inbox.mail_count':'邮件','inbox.read':'阅读','inbox.no_content':'无内容','inbox.from':'发件人','inbox.subject':'主题','inbox.messages_title':'邮件 ({n})','inbox.click_copy':'点击复制','inbox.confidence':'置信度','inbox.extracting':'提取验证码/链接…','inbox.extracting_wait':'提取验证码/链接（等待邮件…）…','inbox.no_code':'未找到验证码或链接','inbox.wait_retry':'等待邮件并重试','inbox.expires':'过期',
+'inbox.back_to_list':'返回邮箱列表',
+'mailbox.open':'邮箱','mailbox.scope_lease':'本次租期','mailbox.scope_all':'整个邮箱','mailbox.lease_count':'共 {n} 段租期','mailbox.lease_current':'当前租期','mailbox.lease_past':'历史租期','mailbox.lease_open':'进行中','mailbox.state_gap':'租期外（账号空闲期）','mailbox.state_before':'入池前','mailbox.state_undated':'无时间戳','mailbox.empty':'这个邮箱里没有邮件','mailbox.limit_note':'已到上游上限：只能取到最新 {n} 封，更早的邮件取不回来。',
 'validate.enter_service':'请输入服务名','validate.select_inbox':'请先选择活跃的邮箱','validate.service_domain_required':'服务和域名为必填项','validate.no_content':'暂无内容可复制','validate.copy_failed':'复制失败','validate.paste_key':'请粘贴 API Key','validate.paste_account':'请粘贴账号信息','validate.select_delete':'请先选择要删除的','validate.enter_name':'请输入备注名称','validate.json_error':'JSON 格式错误','validate.need_name':'请填写标识名','validate.need_api_base':'请填写 API Base URL',
 // Docs - Common
 'docs.api_title':'API 文档','docs.rest_api':'REST API','docs.base_url':'Base URL:',
 // Docs - Sidebar nav groups
 'docs.overview':'概述','docs.inbox_mgmt':'邮箱管理','docs.block_mgmt':'封禁管理','docs.provider_mgmt':'渠道管理','docs.outlook_pool':'Outlook 账号池','docs.yyds_pool':'YYDS Mail 池','docs.imap_pool':'IMAP 域名邮箱','docs.key_mgmt':'密钥管理','docs.ai_integration':'AI / LLM 集成',
 // Docs - Sidebar nav links
-'docs.nav_auth':'认证方式','docs.nav_close_inbox':'关闭邮箱','docs.nav_create_inbox':'创建邮箱','docs.nav_errors':'错误处理','docs.nav_list_inboxes':'邮箱列表','docs.nav_get_messages':'获取邮件','docs.nav_get_message':'邮件详情','docs.nav_report_inbox':'上报结果','docs.nav_list_blocks':'封禁列表','docs.nav_add_block':'添加封禁','docs.nav_del_block':'删除封禁','docs.nav_list_providers':'渠道列表','docs.nav_get_provider':'渠道详情','docs.nav_patch_provider':'更新渠道','docs.nav_get_domains':'可用域名','docs.nav_ol_stats':'池统计','docs.nav_ol_import':'导入账号','docs.nav_ol_list':'账号列表','docs.nav_ol_delete':'删除账号','docs.nav_ol_check':'检测令牌','docs.nav_ol_renew':'续期令牌','docs.nav_yd_stats':'池统计','docs.nav_yd_import':'导入 Key','docs.nav_yd_list':'Key 列表','docs.nav_yd_delete':'删除 Key','docs.nav_yd_check':'验证 Key','docs.nav_yd_wildcard':'Wildcard 设置','docs.nav_im_stats':'池统计','docs.nav_im_list':'账号列表','docs.nav_im_list_one':'账号详情','docs.nav_im_add':'添加账号','docs.nav_im_update':'更新账号','docs.nav_im_delete':'删除账号','docs.nav_im_test':'测试连接','docs.nav_key_create':'创建密钥','docs.nav_key_list':'密钥列表','docs.nav_key_update':'更新密钥','docs.nav_key_delete':'删除密钥','docs.nav_get_code':'提取验证码','docs.nav_llms':'llms.txt',
+'docs.nav_auth':'认证方式','docs.nav_close_inbox':'关闭邮箱','docs.nav_create_inbox':'创建邮箱','docs.nav_errors':'错误处理','docs.nav_list_inboxes':'邮箱列表','docs.nav_get_messages':'获取邮件','docs.nav_get_message':'邮件详情','docs.nav_report_inbox':'上报结果','docs.nav_list_blocks':'封禁列表','docs.nav_add_block':'添加封禁','docs.nav_del_block':'删除封禁','docs.nav_list_providers':'渠道列表','docs.nav_get_provider':'渠道详情','docs.nav_patch_provider':'更新渠道','docs.nav_get_domains':'可用域名','docs.nav_ol_stats':'池统计','docs.nav_ol_import':'导入账号','docs.nav_ol_list':'账号列表','docs.nav_ol_mailbox':'账号邮箱','docs.nav_ol_delete':'删除账号','docs.nav_ol_check':'检测令牌','docs.nav_ol_renew':'续期令牌','docs.nav_yd_stats':'池统计','docs.nav_yd_import':'导入 Key','docs.nav_yd_list':'Key 列表','docs.nav_yd_delete':'删除 Key','docs.nav_yd_check':'验证 Key','docs.nav_yd_wildcard':'Wildcard 设置','docs.nav_im_stats':'池统计','docs.nav_im_list':'账号列表','docs.nav_im_list_one':'账号详情','docs.nav_im_add':'添加账号','docs.nav_im_update':'更新账号','docs.nav_im_delete':'删除账号','docs.nav_im_test':'测试连接','docs.nav_key_create':'创建密钥','docs.nav_key_list':'密钥列表','docs.nav_key_update':'更新密钥','docs.nav_key_delete':'删除密钥','docs.nav_get_code':'提取验证码','docs.nav_llms':'llms.txt',
 // Docs - Auth section
 'docs.auth_title':'认证方式','docs.auth_desc1':'所有 <code>/api/*</code> 接口需在请求头中携带 Bearer Token。支持两种身份：','docs.auth_desc2':'<strong>管理员密钥</strong>（环境变量 <code>API_SECRET</code>）：拥有全部权限，包括密钥管理接口。','docs.auth_desc3':'<strong>普通 API Key</strong>（通过管理员创建，<code>mk_</code> 前缀）：可调用除密钥管理外的全部接口。每次调用自动记录用量。','docs.auth_desc4':'若未设置 <code>API_SECRET</code> 则无需认证（开发模式）。',
 // Docs - Errors section
@@ -2572,6 +2687,7 @@ zh: {
 'docs.ol_stats_desc':'账号池统计',
 'docs.ol_import_desc':'批量导入账号','docs.ol_import_param_accounts':'每行一个账号，支持：<code>邮箱----密码</code> 或 <code>邮箱----密码----ClientID----refresh_token</code>。','docs.ol_import_note':'分隔符为 <code>----</code>（4 个减号）。未完成授权的账号会进入待授权状态，可在账号列表中用 Thunderbird 授权补全。已存在的邮箱会被跳过（INSERT OR IGNORE）。',
 'docs.ol_list_desc':'查询账号列表','docs.ol_list_param_status':'令牌状态：<code>valid</code>、<code>invalid</code>、<code>pending_oauth</code>、<code>no_token</code>','docs.ol_list_param_available':'<code>true</code> 只看空闲，<code>false</code> 只看已分配','docs.ol_list_param_group':'按分组名筛选',
+'docs.ol_mailbox_desc':'查看账号邮箱的全部邮件','docs.ol_mailbox_param_limit':'取回的邮件条数，默认 50，最大 100','docs.ol_mailbox_note':'管理员专用。<code>/api/inbox/:id/messages</code> 只返回该邮箱在这一次租期内收到的邮件，这条接口返回整个账号邮箱。每封邮件带 <code>leaseState</code>：<code>lease</code>（属于 <code>leaseId</code> 那次租期）、<code>gap</code>（两次租期之间，账号空闲）、<code>before</code>（第一次租期之前）、<code>undated</code>（没有可解析的时间）。<code>limit</code> 是硬上限而不是分页：更早的邮件取不回来，取满时 <code>truncated</code> 为 <code>true</code>。','docs.ol_mailbox_detail_desc':'读取账号邮箱中的一封邮件','docs.ol_mailbox_detail_note':'管理员专用，不受租期限制。<code>/api/inbox/:id/messages/:mid</code> 对租期外的邮件返回 404，这条接口能打开它们。',
 'docs.ol_delete_desc':'批量删除账号（仅未分配的）','docs.ol_delete_param_emails':'要删除的邮箱地址列表','docs.ol_delete_note':'已分配给活跃邮箱的账号无法删除，需先关闭对应邮箱释放账号。',
 'docs.ol_check_desc':'批量检测令牌有效性','docs.ol_check_param_emails':'要检测的邮箱列表，不传则检测全部','docs.ol_check_note':'检测原理：使用已保存的授权凭据向 Microsoft 验证，成功即有效。会同步更新数据库中的 token_status 字段。',
 'docs.ol_renew_desc':'批量续期令牌','docs.ol_renew_param_emails':'要续期的邮箱列表，不传则全部续期','docs.ol_renew_note':'续期会刷新已保存的授权凭据。Microsoft 授权有有效期，建议定期续期。续期成功后 token_status 自动更新为 valid。',
@@ -2634,13 +2750,15 @@ en: {
 'pager.first':'First','pager.prev':'Prev','pager.next':'Next','pager.last':'Last','pager.page':'page','pager.items':'items','pager.per_page':'/page',
 'status.normal':'System OK','status.no_providers':'No providers available',
 'inbox.receive':'Messages','inbox.extract':'Extract','inbox.success':'Success','inbox.fail':'Fail','inbox.close':'Close','inbox.loading_mail':'Loading messages…','inbox.no_mail':'No messages','inbox.mail_count':'Messages','inbox.read':'Read','inbox.no_content':'No content','inbox.from':'From','inbox.subject':'Subject','inbox.messages_title':'Messages ({n})','inbox.click_copy':'Click to copy','inbox.confidence':'Confidence','inbox.extracting':'Extracting codes/links…','inbox.extracting_wait':'Extracting codes/links (waiting for mail…)…','inbox.no_code':'No code or link found','inbox.wait_retry':'Wait for mail and retry','inbox.expires':'Expires',
+'inbox.back_to_list':'Back to inbox list',
+'mailbox.open':'Mailbox','mailbox.scope_lease':'This lease','mailbox.scope_all':'Whole mailbox','mailbox.lease_count':'{n} lease(s)','mailbox.lease_current':'Current lease','mailbox.lease_past':'Past lease','mailbox.lease_open':'open','mailbox.state_gap':'Between leases (account idle)','mailbox.state_before':'Before the first lease','mailbox.state_undated':'No timestamp','mailbox.empty':'This mailbox is empty','mailbox.limit_note':'Upstream cap reached: only the newest {n} are reachable — older mail cannot be fetched.',
 'validate.enter_service':'Please enter a service name','validate.select_inbox':'Please select active inboxes first','validate.service_domain_required':'Service and domain are required','validate.no_content':'Nothing to copy','validate.copy_failed':'Copy failed','validate.paste_key':'Please paste API keys','validate.paste_account':'Please paste account info','validate.select_delete':'Please select items to delete','validate.enter_name':'Please enter a name','validate.json_error':'Invalid JSON','validate.need_name':'Name is required','validate.need_api_base':'API Base URL is required',
 // Docs - Common
 'docs.api_title':'API Docs','docs.rest_api':'REST API','docs.base_url':'Base URL:',
 // Docs - Sidebar nav groups
 'docs.overview':'Overview','docs.inbox_mgmt':'Inbox Management','docs.block_mgmt':'Block Management','docs.provider_mgmt':'Provider Management','docs.outlook_pool':'Outlook Account Pool','docs.yyds_pool':'YYDS Mail Pool','docs.imap_pool':'IMAP Domain Mail','docs.key_mgmt':'API Key Management','docs.ai_integration':'AI / LLM Integration',
 // Docs - Sidebar nav links
-'docs.nav_auth':'Authentication','docs.nav_close_inbox':'Close inbox','docs.nav_create_inbox':'Create inbox','docs.nav_errors':'Error Handling','docs.nav_list_inboxes':'List Inboxes','docs.nav_get_messages':'Get Messages','docs.nav_get_message':'Message Detail','docs.nav_report_inbox':'Report Result','docs.nav_list_blocks':'Block List','docs.nav_add_block':'Add Block','docs.nav_del_block':'Delete Block','docs.nav_list_providers':'Provider List','docs.nav_get_provider':'Provider Detail','docs.nav_patch_provider':'Update Provider','docs.nav_get_domains':'Available Domains','docs.nav_ol_stats':'Pool Stats','docs.nav_ol_import':'Import Accounts','docs.nav_ol_list':'Account List','docs.nav_ol_delete':'Delete Accounts','docs.nav_ol_check':'Check Token','docs.nav_ol_renew':'Renew Token','docs.nav_yd_stats':'Pool Stats','docs.nav_yd_import':'Import Key','docs.nav_yd_list':'Key List','docs.nav_yd_delete':'Delete Key','docs.nav_yd_check':'Verify Key','docs.nav_yd_wildcard':'Wildcard Setting','docs.nav_im_stats':'Pool Stats','docs.nav_im_list':'Account List','docs.nav_im_list_one':'Account Detail','docs.nav_im_add':'Add Account','docs.nav_im_update':'Update Account','docs.nav_im_delete':'Delete Account','docs.nav_im_test':'Test Connection','docs.nav_key_create':'Create Key','docs.nav_key_list':'Key List','docs.nav_key_update':'Update Key','docs.nav_key_delete':'Delete Key','docs.nav_get_code':'Extract Code','docs.nav_llms':'llms.txt',
+'docs.nav_auth':'Authentication','docs.nav_close_inbox':'Close inbox','docs.nav_create_inbox':'Create inbox','docs.nav_errors':'Error Handling','docs.nav_list_inboxes':'List Inboxes','docs.nav_get_messages':'Get Messages','docs.nav_get_message':'Message Detail','docs.nav_report_inbox':'Report Result','docs.nav_list_blocks':'Block List','docs.nav_add_block':'Add Block','docs.nav_del_block':'Delete Block','docs.nav_list_providers':'Provider List','docs.nav_get_provider':'Provider Detail','docs.nav_patch_provider':'Update Provider','docs.nav_get_domains':'Available Domains','docs.nav_ol_stats':'Pool Stats','docs.nav_ol_import':'Import Accounts','docs.nav_ol_list':'Account List','docs.nav_ol_mailbox':'Account Mailbox','docs.nav_ol_delete':'Delete Accounts','docs.nav_ol_check':'Check Token','docs.nav_ol_renew':'Renew Token','docs.nav_yd_stats':'Pool Stats','docs.nav_yd_import':'Import Key','docs.nav_yd_list':'Key List','docs.nav_yd_delete':'Delete Key','docs.nav_yd_check':'Verify Key','docs.nav_yd_wildcard':'Wildcard Setting','docs.nav_im_stats':'Pool Stats','docs.nav_im_list':'Account List','docs.nav_im_list_one':'Account Detail','docs.nav_im_add':'Add Account','docs.nav_im_update':'Update Account','docs.nav_im_delete':'Delete Account','docs.nav_im_test':'Test Connection','docs.nav_key_create':'Create Key','docs.nav_key_list':'Key List','docs.nav_key_update':'Update Key','docs.nav_key_delete':'Delete Key','docs.nav_get_code':'Extract Code','docs.nav_llms':'llms.txt',
 // Docs - Auth section
 'docs.auth_title':'Authentication','docs.auth_desc1':'All <code>/api/*</code> endpoints require a Bearer token in the request header. Two identity types are supported:','docs.auth_desc2':'<strong>Admin Key</strong> (env var <code>API_SECRET</code>): Full access to all endpoints, including key management.','docs.auth_desc3':'<strong>Regular API Key</strong> (created by admin, <code>mk_</code> prefix): Access to all endpoints except key management. Usage is recorded per call.','docs.auth_desc4':'If <code>API_SECRET</code> is not set, no authentication is required (development mode).',
 // Docs - Errors section
@@ -2679,6 +2797,7 @@ en: {
 'docs.ol_stats_desc':'Account pool statistics',
 'docs.ol_import_desc':'Batch import accounts','docs.ol_import_param_accounts':'One account per line. Supported formats: <code>email----password</code> or <code>email----password----ClientID----refresh_token</code>.','docs.ol_import_note':'Separator is <code>----</code> (4 dashes). Accounts without completed authorization enter a pending state and can be completed from the account list with Thunderbird authorization. Existing emails are skipped (INSERT OR IGNORE).',
 'docs.ol_list_desc':'List accounts','docs.ol_list_param_status':'Token status: <code>valid</code>, <code>invalid</code>, <code>pending_oauth</code>, <code>no_token</code>','docs.ol_list_param_available':'<code>true</code> for free only, <code>false</code> for assigned only','docs.ol_list_param_group':'Filter by group name',
+'docs.ol_mailbox_desc':'Read the whole account mailbox','docs.ol_mailbox_param_limit':'How many messages to fetch. Default 50, max 100','docs.ol_mailbox_note':'Admin only. <code>/api/inbox/:id/messages</code> returns only the mail that arrived during that one lease; this returns the whole account mailbox. Each message carries a <code>leaseState</code>: <code>lease</code> (inside <code>leaseId</code>), <code>gap</code> (between leases, account idle), <code>before</code> (older than the first lease), <code>undated</code> (no parseable timestamp). <code>limit</code> is a hard ceiling, not paging: older mail cannot be fetched, and <code>truncated</code> is <code>true</code> when the cap was hit.','docs.ol_mailbox_detail_desc':'Read one message from the account mailbox','docs.ol_mailbox_detail_note':'Admin only, not clipped to a lease. <code>/api/inbox/:id/messages/:mid</code> 404s for mail outside the lease; this endpoint can open it.',
 'docs.ol_delete_desc':'Batch delete accounts (unassigned only)','docs.ol_delete_param_emails':'List of email addresses to delete','docs.ol_delete_note':'Accounts assigned to active inboxes cannot be deleted. Close the corresponding inbox to release the account first.',
 'docs.ol_check_desc':'Batch check token validity','docs.ol_check_param_emails':'List of emails to check, checks all if omitted','docs.ol_check_note':'Uses the saved authorization credentials to verify with Microsoft. Success means valid. Updates the token_status field in the database.',
 'docs.ol_renew_desc':'Batch renew tokens','docs.ol_renew_param_emails':'List of emails to renew, renews all if omitted','docs.ol_renew_note':'Refreshes the saved authorization credentials. Microsoft authorization expires over time, so periodic renewal is recommended. token_status is auto-updated to valid on success.',
@@ -2985,6 +3104,9 @@ document.querySelectorAll('.nav-icon[data-view]').forEach(btn => {
     btn.classList.add('active');
     document.getElementById('v-' + btn.dataset.view).classList.add('active');
     closeMobileMore();
+    // Navigating to 收件箱 means "show me the list", never "put me back in the
+    // detail I was reading". Scroll to the top rather than the stale position.
+    if (btn.dataset.view === 'inboxes') exitInboxDetail(false, false);
     loadView(btn.dataset.view);
   });
 });
@@ -3108,6 +3230,7 @@ function closeMobileMore() {
 }
 enhanceNavA11y();
 setupMobileNav();
+initCreatePanel();
 
 // ─── Keyboard shortcuts ───
 document.addEventListener('keydown', e => {
@@ -3333,6 +3456,13 @@ function switchAndView(id) {
   document.getElementById('v-inboxes').classList.add('active');
   loadInboxes().then(() => viewInbox(id));
 }
+function switchAndViewMailbox(email) {
+  document.querySelectorAll('.nav-icon').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelector('[data-view="inboxes"]').classList.add('active');
+  document.getElementById('v-inboxes').classList.add('active');
+  loadInboxes().then(() => viewMailbox(email));
+}
 function switchAndCode(id) {
   document.querySelectorAll('.nav-icon').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -3408,18 +3538,161 @@ async function createInbox(prefix) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+/**
+ * The inbox list and whatever you opened from it are two modes of one page, not
+ * two stacked panels. Stacking meant every click ended in a scroll: the create
+ * form plus a 20-row table pushed the messages past the fold. The list's scroll
+ * position is kept so going back lands where you left.
+ */
+let _inboxListScroll = 0;
+
+function inboxScroller() { return document.querySelector('.main'); }
+
+function prefersReducedMotion() { return matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+/** Waits out a CSS transition, or not at all when the user asked for less motion. */
+function motionDelay(ms) {
+  return prefersReducedMotion() ? Promise.resolve() : new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Fade the outgoing side, then swap. Callers must await this before writing to
+ * the detail area, or the panel renders while its container is still hidden and
+ * its entrance animation is thrown away.
+ */
+async function enterInboxDetail() {
+  const view = document.getElementById('v-inboxes');
+  if (!view || view.classList.contains('detail-mode')) return;
+  _inboxListScroll = inboxScroller()?.scrollTop || 0;
+  _scopeIndAt = null;
+  view.classList.add('leaving');
+  await motionDelay(120);
+  view.classList.remove('leaving');
+  view.classList.add('detail-mode');
+  if (inboxScroller()) inboxScroller().scrollTop = 0;
+}
+
+async function exitInboxDetail(restoreScroll = true, animate = true) {
+  const view = document.getElementById('v-inboxes');
+  if (!view || !view.classList.contains('detail-mode')) return;
+  _scopeIndAt = null;
+  if (animate) {
+    view.classList.add('leaving');
+    await motionDelay(120);
+    view.classList.remove('leaving');
+  }
+  view.classList.remove('detail-mode');
+  document.getElementById('inbox-detail-area').innerHTML = '';
+  if (inboxScroller()) inboxScroller().scrollTop = restoreScroll ? _inboxListScroll : 0;
+}
+
+/**
+ * The placeholder only appears if the wait is real. Showing it unconditionally
+ * meant a local fetch inserted a panel and replaced it 7ms later, so the
+ * entrance animation restarted from zero and the whole thing read as a flicker.
+ */
+/**
+ * Fades whatever panel is already showing before the caller overwrites it.
+ * No-ops on the first render into an empty area — the mode transition covers
+ * that one — so this only costs a beat when one panel really replaces another.
+ */
+async function fadeOutDetail(area) {
+  const current = area.querySelector('.detail-panel');
+  if (!current || prefersReducedMotion()) return;
+  current.classList.add('panel-leaving');
+  await motionDelay(120);
+}
+
+function deferredLoading(area, text) {
+  const timer = setTimeout(() => {
+    area.innerHTML = `<div class="detail-panel"><p style="color:var(--text3)">${text}</p></div>`;
+  }, 150);
+  return () => clearTimeout(timer);
+}
+
+function toggleCreatePanel() {
+  const panel = document.getElementById('i-create-panel');
+  const collapsed = panel.classList.toggle('collapsed');
+  localStorage.setItem('mailhub_create_collapsed', collapsed ? '1' : '0');
+}
+
+function initCreatePanel() {
+  // Collapsed by default: the list is what you come to this page for, and every
+  // pixel above it is a pixel of scrolling between a click and its result.
+  const panel = document.getElementById('i-create-panel');
+  if (panel && localStorage.getItem('mailhub_create_collapsed') !== '0') panel.classList.add('collapsed');
+}
+
+let _scopeIndAt = null;
+
+/**
+ * Switching scope re-renders the whole panel, indicator included, so animating
+ * the OLD indicator on click was pointless — the replacement landed 10ms later
+ * at its final position and cut the slide off. The new indicator is instead
+ * placed where the old one was, then moved on the next frame, so the slide runs
+ * in full no matter how fast the fetch came back.
+ */
+function syncScopeIndicator(tabs) {
+  const ind = tabs?.querySelector('.scope-ind');
+  const active = tabs?.querySelector('.scope-tab.active');
+  if (!ind || !active) return;
+  const to = { left: active.offsetLeft, width: active.offsetWidth };
+  const from = _scopeIndAt;
+  _scopeIndAt = to;
+  const place = (p) => { ind.style.left = `${p.left}px`; ind.style.width = `${p.width}px`; };
+  if (!from || prefersReducedMotion() || (from.left === to.left && from.width === to.width)) {
+    place(to);
+    return;
+  }
+  ind.style.transition = 'none';
+  place(from);
+  requestAnimationFrame(() => { ind.style.transition = ''; place(to); });
+}
+
+function scopeSwitch(btn, target, email, inboxId) {
+  return target === 'mailbox' ? viewMailbox(email, inboxId) : viewInbox(inboxId);
+}
+
+function msgTableHead() {
+  return `<thead><tr><th>${t('inbox.from')}</th><th>${t('inbox.subject')}</th><th data-i18n="common.time">${t('common.time')}</th><th>${t('common.actions')}</th></tr></thead>`;
+}
+
+function msgRow(m, readCall) {
+  return `<tr>
+    <td style="font-size:var(--text-base)">${esc(m.from)}</td>
+    <td>${esc(m.subject)}</td>
+    <td class="time">${fmtTime(m.receivedAt, 'date')}</td>
+    <td>${iconBtn('mail', t('inbox.read'), readCall, 'blue')}</td>
+  </tr>`;
+}
+
 async function viewInbox(id) {
   const area = document.getElementById('inbox-detail-area');
-  area.innerHTML = '<div class="detail-panel"><p style="color:var(--text3)">' + (t('common.loading') || 'Loading...') + '</p></div>';
+  await enterInboxDetail();
+  await fadeOutDetail(area);
+  const stopLoading = deferredLoading(area, t('common.loading') || 'Loading...');
   try {
     const data = await api(`/inbox/${id}/messages`);
+    stopLoading();
     const msgs = data.messages || [];
     const stBadge = data.status==='active' ? 'badge-active' : 'badge-closed';
     const stText = data.status==='active' ? '活跃' : '已关闭';
+    // An inbox is a lease over a mailbox and this list stays clipped to the
+    // lease. The tab is the way out to the mailbox itself — offered only when
+    // the server names an account, i.e. only for Outlook, where one mailbox
+    // serves one lease at a time and the rest of it is this caller's own
+    // history rather than someone else's.
+    const scopeTabs = data.accountEmail ? `
+      <div class="scope-tabs">
+        <span class="scope-ind"></span>
+        <button class="scope-tab active">${t('mailbox.scope_lease')} (${msgs.length})</button>
+        <button class="scope-tab" onclick="return scopeSwitch(this,'mailbox',${jsArg(data.accountEmail)},${jsArg(id)})">${t('mailbox.scope_all')}</button>
+      </div>` : '';
     const inboxHeader = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
       <span class="mono" style="font-size:var(--text-md);font-weight:var(--fw-semibold)">${esc(data.address||'')}</span>
       <span class="badge badge-provider">${esc(data.provider||'')}</span>
       <span class="badge ${stBadge}">${stText}</span>
+      ${scopeTabs}
     </div>`;
     if (!msgs.length) {
       area.innerHTML = `<div class="detail-panel">${inboxHeader}<p style="color:var(--text3)">${t('inbox.no_mail')}</p><div style="margin-top:8px">${iconBtn('refresh', t('nav.refresh'), `return viewInbox(${jsArg(id)})`, 'blue')}</div></div>`;
@@ -3432,40 +3705,196 @@ async function viewInbox(id) {
           <h3>${t('inbox.messages_title', {n: msgs.length})}</h3>
           ${iconBtn('refresh', t('nav.refresh'), `return viewInbox(${jsArg(id)})`, 'blue')}
         </div>
-        <div class="panel" style="margin-bottom:0"><table><thead><tr><th>${t('inbox.from')}</th><th>${t('inbox.subject')}</th><th data-i18n="common.time">${t('common.time')}</th><th>${t('common.actions')}</th></tr></thead><tbody>${msgs.map(m => `
-          <tr>
-            <td style="font-size:var(--text-base)">${esc(m.from)}</td>
-            <td>${esc(m.subject)}</td>
-            <td class="time">${fmtTime(m.receivedAt, 'date')}</td>
-            <td>${iconBtn('mail', t('inbox.read'), `return readMessage(${jsArg(id)},${jsArg(m.id)})`, 'blue')}</td>
-          </tr>
-        `).join('')}</tbody></table></div>
-        <div id="msg-content"></div>
+        <div class="panel" style="margin-bottom:0"><table>${msgTableHead()}<tbody>${msgs.map(m =>
+          msgRow(m, `return readMessage(${jsArg(id)},${jsArg(m.id)},this)`)
+        ).join('')}</tbody></table></div>
       </div>
     `;
+    syncScopeIndicator(area.querySelector('.scope-tabs'));
+  } catch (e) { stopLoading(); toast(e.message, 'error'); }
+}
+
+/**
+ * The account's whole mailbox, with every message filed under the lease that
+ * held the mailbox when it arrived. The lease view above is the default because
+ * it answers "did MY signup mail arrive"; this one answers "what else is in
+ * here", which the lease view cannot and should not.
+ */
+async function viewMailbox(email, backInboxId) {
+  const area = document.getElementById('inbox-detail-area');
+  await enterInboxDetail();
+  await fadeOutDetail(area);
+  const stopLoading = deferredLoading(area, t('common.loading') || 'Loading...');
+  try {
+    const data = await api(`/outlook/accounts/${encodeURIComponent(email)}/mailbox`);
+    stopLoading();
+    const msgs = data.messages || [];
+    const leases = data.leases || [];
+    const leaseById = {};
+    leases.forEach(l => { leaseById[l.id] = l; });
+
+    const scopeTabs = backInboxId ? `
+      <div class="scope-tabs">
+        <span class="scope-ind"></span>
+        <button class="scope-tab" onclick="return scopeSwitch(this,'lease',${jsArg(email)},${jsArg(backInboxId)})">${t('mailbox.scope_lease')}</button>
+        <button class="scope-tab active">${t('mailbox.scope_all')} (${msgs.length})</button>
+      </div>` : '';
+
+    const header = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <span class="mono" style="font-size:var(--text-md);font-weight:var(--fw-semibold)">${esc(email)}</span>
+      <span class="badge badge-provider">outlook</span>
+      <span class="badge badge-paid">${t('mailbox.lease_count', {n: leases.length})}</span>
+      ${scopeTabs}
+    </div>`;
+    const refresh = iconBtn('refresh', t('nav.refresh'), `return viewMailbox(${jsArg(email)},${jsArg(backInboxId || '')})`, 'blue');
+
+    if (!msgs.length) {
+      area.innerHTML = `<div class="detail-panel">${header}<p style="color:var(--text3)">${t('mailbox.empty')}</p><div style="margin-top:8px">${refresh}</div></div>`;
+      return;
+    }
+
+    area.innerHTML = `
+      <div class="detail-panel">
+        ${header}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h3>${t('inbox.messages_title', {n: msgs.length})}</h3>
+          ${refresh}
+        </div>
+        <div class="panel" style="margin-bottom:0"><table>${msgTableHead()}<tbody id="mailbox-list"></tbody></table></div>
+        <div id="mailbox-pager"></div>
+        ${data.truncated ? `<div style="margin-top:10px;font-size:var(--text-base);color:var(--text3)">${t('mailbox.limit_note', {n: data.limit})}</div>` : ''}
+      </div>
+    `;
+    // A full mailbox is 50 rows — long enough that the pager beats scrolling.
+    _mailboxCtx = { email, leaseById };
+    delete _pageState['mailbox'];
+    paginateTable('mailbox', msgs, renderMailboxRows, 'mailbox-pager');
+    syncScopeIndicator(area.querySelector('.scope-tabs'));
+  } catch (e) { stopLoading(); toast(e.message, 'error'); }
+}
+
+let _mailboxCtx = null;
+
+function renderMailboxRows(rows) {
+  const { email, leaseById } = _mailboxCtx;
+  // Dividers are recomputed per page, so page 2 opens with the lease its first
+  // row belongs to rather than inheriting a heading the reader cannot see.
+  let bucket;
+  document.getElementById('mailbox-list').innerHTML = rows.map(m => {
+    const key = m.leaseState === 'lease' ? m.leaseId : m.leaseState;
+    let sep = '';
+    if (key !== bucket) {
+      bucket = key;
+      sep = `<tr class="lease-sep"><td colspan="4">${leaseSepLabel(m, leaseById, email)}</td></tr>`;
+    }
+    return sep + msgRow(m, `return readMailboxMessage(${jsArg(email)},${jsArg(m.id)},this)`);
+  }).join('');
+}
+
+function leaseSepLabel(m, leaseById, accountEmail) {
+  if (m.leaseState !== 'lease') return `<span class="lease-name">${t('mailbox.state_' + m.leaseState)}</span>`;
+  const l = leaseById[m.leaseId];
+  if (!l) return `<span class="lease-name">${t('mailbox.state_gap')}</span>`;
+  const parts = [
+    // Newest ≠ running: an account whose last lease was closed and not yet
+    // re-leased still has that lease on top, and calling it "current" would say
+    // the mailbox is in use when it is idle. Status is the only honest source.
+    `<span class="lease-name">${l.status === 'active' ? t('mailbox.lease_current') : t('mailbox.lease_past')}</span>`,
+    `<span class="mono">${esc(l.id)}</span>`,
+  ];
+  if (l.address && l.address !== accountEmail) parts.push(`<span class="mono">${esc(l.address)}</span>`);
+  if (l.targetService) parts.push(esc(l.targetService));
+  parts.push(`${fmtTime(l.createdAt, 'date')} → ${l.endedAt ? fmtTime(l.endedAt, 'date') : t('mailbox.lease_open')}`);
+  return parts.join(' · ');
+}
+
+/**
+ * The body opens as a row directly under the message it belongs to, so it
+ * appears where the eye already is. Rendering it below the whole table meant a
+ * second scroll for every message read.
+ */
+function renderMessage(m, btn) {
+  const row = btn?.closest('tr');
+  if (!row) return;
+  // allow-same-origin (still WITHOUT allow-scripts, so nothing in the mail can
+  // run) is what lets fitMsgBody read the rendered height and size the frame to
+  // its content instead of leaving mail squeezed through a fixed slot.
+  const bodyHtml = m.html
+    ? `<iframe srcdoc="${esc(m.html).replace(/"/g,'&quot;')}" sandbox="allow-same-origin" onload="fitMsgBody(this.closest('.msg-body'))"></iframe>`
+    : `<pre style="white-space:pre-wrap;font-size:var(--text-md);margin:0">${esc(m.text || t('inbox.no_content'))}</pre>`;
+
+  // Only one body at a time. A sibling closes instantly rather than animating,
+  // so switching messages never leaves two rows fighting over the layout.
+  row.parentElement.querySelectorAll('.msg-expand').forEach(el => el.remove());
+
+  const tr = document.createElement('tr');
+  tr.className = 'msg-expand';
+  tr.innerHTML = `<td colspan="4"><div class="msg-expand-wrap"><div>
+    <div class="msg-viewer">
+      <div class="msg-header"><h3>${esc(m.subject)}</h3><p>From: ${esc(m.from)} · ${esc(m.receivedAt)}</p></div>
+      <div class="msg-body">${bodyHtml}</div>
+    </div>
+  </div></div></td>`;
+  row.after(tr);
+  if (!m.html) fitMsgBody(tr.querySelector('.msg-body'));
+  requestAnimationFrame(() => tr.classList.add('open'));
+}
+
+/** Reading the same message again closes it. Returns true when it did. */
+function collapseOwnMessage(btn) {
+  const open = btn?.closest('tr')?.nextElementSibling;
+  if (!open || !open.classList.contains('msg-expand')) return false;
+  open.classList.remove('open');
+  setTimeout(() => open.remove(), 240);
+  return true;
+}
+
+/**
+ * Size the reader to its content, capped at ~65vh so a newsletter cannot push
+ * the page furniture off screen. The cap is a starting height, not a limit —
+ * .msg-body carries resize:vertical and no max-height, so dragging goes past it.
+ */
+function fitMsgBody(box, retried) {
+  if (!box) return;
+  const cap = Math.min(window.innerHeight * 0.65, 760);
+  const frame = box.querySelector('iframe');
+  let content;
+  if (frame) {
+    let inner = 0;
+    try { inner = frame.contentDocument.documentElement.scrollHeight; } catch (e) { inner = 0; }
+    if (inner) frame.style.height = inner + 'px';
+    content = inner || 320;
+    // Images finish after load and change the height under us; re-measure once.
+    if (!retried) setTimeout(() => fitMsgBody(box, true), 400);
+  } else {
+    box.style.height = 'auto';
+    content = box.scrollHeight;
+  }
+  box.style.height = Math.max(120, Math.min(content + 4, cap)) + 'px';
+}
+
+async function readMessage(inboxId, msgId, btn) {
+  if (collapseOwnMessage(btn)) return;
+  try {
+    renderMessage(await api(`/inbox/${inboxId}/messages/${msgId}`), btn);
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function readMessage(inboxId, msgId) {
+async function readMailboxMessage(email, msgId, btn) {
+  if (collapseOwnMessage(btn)) return;
   try {
-    const m = await api(`/inbox/${inboxId}/messages/${msgId}`);
-    const bodyHtml = m.html
-      ? `<iframe srcdoc="${esc(m.html).replace(/"/g,'&quot;')}" sandbox></iframe>`
-      : `<pre style="white-space:pre-wrap;font-size:var(--text-md)">${esc(m.text || t('inbox.no_content'))}</pre>`;
-    document.getElementById('msg-content').innerHTML = `
-      <div class="msg-viewer">
-        <div class="msg-header"><h3>${esc(m.subject)}</h3><p>From: ${esc(m.from)} · ${esc(m.receivedAt)}</p></div>
-        <div class="msg-body">${bodyHtml}</div>
-      </div>
-    `;
+    renderMessage(await api(`/outlook/accounts/${encodeURIComponent(email)}/mailbox/${encodeURIComponent(msgId)}`), btn);
   } catch (e) { toast(e.message, 'error'); }
 }
 
 async function getCode(id, wait = false) {
   const area = document.getElementById('inbox-detail-area');
-  area.innerHTML = `<div class="detail-panel"><p style="color:var(--text3)">${wait ? t('inbox.extracting_wait') : t('inbox.extracting')}</p></div>`;
+  await enterInboxDetail();
+  await fadeOutDetail(area);
+  const stopLoading = deferredLoading(area, wait ? t('inbox.extracting_wait') : t('inbox.extracting'));
   try {
     const data = await api(`/inbox/${id}/code?wait=${wait}&timeout=30`);
+    stopLoading();
     if (!data.codes?.length) {
       area.innerHTML = `<div class="detail-panel"><p style="color:var(--text3)">${t('inbox.no_code')}</p><button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="return getCode('${id}',true)">${t('inbox.wait_retry')}</button></div>`;
       return;
@@ -3484,7 +3913,7 @@ async function getCode(id, wait = false) {
         `).join('')}
       </div>
     `;
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) { stopLoading(); toast(e.message, 'error'); }
 }
 
 async function reportInbox(id, success) {
@@ -4369,7 +4798,7 @@ function renderOlTable(rows) {
       <td style="font-size:var(--text-base)">${esc(a.group_name || '-')}</td>
       <td class="time">${fmtTime(a.token_renewed_at, 'date')}</td>
       <td>
-        ${a.last_inbox_id ? iconBtn('inbox', t('inbox.receive'), `return switchAndView(${jsArg(a.last_inbox_id)})`, 'blue') : ''}
+        ${isNoToken || isPendingOauth ? '' : iconBtn('inbox', t('mailbox.open'), `return switchAndViewMailbox(${jsArg(a.email)})`, 'blue')}
         ${passwordButton}
         ${completeButton}
         ${!completeButton ? iconBtn('search', t('outlook.check'), `return checkSingleOl(${jsArg(a.email)})`, 'blue') : ''}
