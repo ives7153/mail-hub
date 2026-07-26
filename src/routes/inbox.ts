@@ -6,7 +6,7 @@ import { registry } from '../providers/registry.js';
 import { rateLimiter } from '../rate-limiter.js';
 import { extractCodes } from '../code-extractor.js';
 import { allRows, bumpServiceReported, getDb, getRow, getSetting, logActivity } from '../db.js';
-import { parseStoredInbox, releaseInboxResources, rowToInboxData } from '../inbox-lifecycle.js';
+import { isMessageWithinInboxLifetime, parseInboxTimestamp, parseStoredInbox, releaseInboxResources, rowToInboxData } from '../inbox-lifecycle.js';
 import type { BaseProvider, InboxData, Message, MessageDetail } from '../providers/base.js';
 import { PROVIDER } from '../providers/base.js';
 import type { AdminEnv } from './admin.js';
@@ -199,7 +199,7 @@ inboxRoutes.get('/inbox/:id', (c) => {
 
 inboxRoutes.get('/inbox/:id/messages', async (c) => {
   const id = c.req.param('id');
-  const row = getInboxRow<InboxDataRow>(c, id, 'provider, address, auth_data, api_base, status');
+  const row = getInboxRow<InboxDataRow>(c, id, 'provider, address, auth_data, api_base, status, created_at');
   if (!row) {
     return c.json({ error: 'Inbox not found' }, 404);
   }
@@ -217,9 +217,12 @@ inboxRoutes.get('/inbox/:id/messages', async (c) => {
     }, 400);
   }
 
+  const inboxCreatedAt = parseInboxTimestamp(row.created_at);
+
   try {
     const messages = await pollProvider(providerName, provider, rowToInboxData(row));
-    return c.json({ messages, status, address, provider: providerName });
+    const own = messages.filter((m) => isMessageWithinInboxLifetime(m.receivedAt, inboxCreatedAt));
+    return c.json({ messages: own, status, address, provider: providerName });
   } catch (e) {
     if (e instanceof PollRateLimitError) return pollRateLimitResponse(c, e);
     return c.json({ error: errorMessage(e) }, 502);
@@ -229,7 +232,7 @@ inboxRoutes.get('/inbox/:id/messages', async (c) => {
 inboxRoutes.get('/inbox/:id/messages/:mid', async (c) => {
   const id = c.req.param('id');
   const mid = c.req.param('mid');
-  const row = getInboxRow<InboxDataRow>(c, id, 'provider, address, auth_data, api_base');
+  const row = getInboxRow<InboxDataRow>(c, id, 'provider, address, auth_data, api_base, created_at');
   if (!row) {
     return c.json({ error: 'Inbox not found' }, 404);
   }
@@ -238,8 +241,16 @@ inboxRoutes.get('/inbox/:id/messages/:mid', async (c) => {
   const provider = registry.get(providerName);
   if (!provider) return c.json({ error: `Provider '${providerName}' not available` }, 500);
 
+  const inboxCreatedAt = parseInboxTimestamp(row.created_at);
+
   try {
     const message = await provider.getMessage(rowToInboxData(row), mid);
+    // The id came from a listing we already filtered, but ids are guessable on
+    // some providers and a shared mailbox would happily serve the previous
+    // tenant's message. Re-check the boundary on the detail path too.
+    if (!isMessageWithinInboxLifetime(message.receivedAt, inboxCreatedAt)) {
+      return c.json({ error: 'Message not found' }, 404);
+    }
     return c.json(message);
   } catch (e) {
     return c.json({ error: errorMessage(e) }, 502);
@@ -271,18 +282,20 @@ inboxRoutes.get('/inbox/:id/code', async (c) => {
     return c.json({ error: 'Inbox polling not supported for this provider' }, 400);
   }
 
-  const inboxCreatedAt = createdAt ? new Date(createdAt).getTime() : 0;
+  const inboxCreatedAt = parseInboxTimestamp(createdAt);
 
   const inbox = rowToInboxData(row);
 
   function filterNew(msgs: Message[]): Message[] {
     return msgs.filter(m => {
-      if (!m.receivedAt) return sinceTimestamp === undefined;
-      const receivedAt = new Date(m.receivedAt).getTime();
+      if (!isMessageWithinInboxLifetime(m.receivedAt, inboxCreatedAt)) return false;
+      if (sinceTimestamp === undefined) return true;
+      // `since` is an explicit "strictly newer than" cursor from the caller, so
+      // an undated message cannot satisfy it.
+      if (!m.receivedAt) return false;
+      const receivedAt = Date.parse(m.receivedAt);
       if (!Number.isFinite(receivedAt)) return false;
-      if (inboxCreatedAt && receivedAt < inboxCreatedAt - 60000) return false;
-      if (sinceTimestamp !== undefined && receivedAt <= sinceTimestamp) return false;
-      return true;
+      return receivedAt > sinceTimestamp;
     });
   }
 
