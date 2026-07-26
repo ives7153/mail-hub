@@ -13,7 +13,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch --include \"src/public/**\" src/index.ts",
     "build": "tsc && node --input-type=commonjs -e \"require('fs').cpSync('src/public','dist/public',{recursive:true})\"",
     "test": "vitest run",
     "test:watch": "vitest",
