@@ -11,6 +11,20 @@ export function secureCompare(a: string, b: string): boolean {
   return timingSafeEqual(ha, hb);
 }
 
+/**
+ * A credential nobody may be able to guess.
+ *
+ * Distinct from utils.randomString, which draws from Math.random() — fine for
+ * a mailbox local part, wrong for anything that guards access. Math.random()
+ * emits a predictable sequence: observing enough output reveals the generator
+ * state and therefore every value that follows.
+ *
+ * Use this for passwords, tokens, and keys; use randomString for names.
+ */
+export function randomSecret(bytes = 24): string {
+  return randomBytes(bytes).toString('base64url');
+}
+
 function deriveKey(secret: string): Buffer {
   return scryptSync(secret, 'mailhub-api-key-enc', 32);
 }

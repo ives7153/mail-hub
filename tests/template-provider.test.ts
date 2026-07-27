@@ -253,6 +253,69 @@ describe('template-provider CRUD', () => {
   });
 });
 
+describe('template provider account password', () => {
+  function passwordProvider() {
+    return new TemplateProvider({
+      name: 'pw-tmpl',
+      displayName: 'PW',
+      tier: 'free',
+      trustLevel: 1,
+      rateLimit: { createPerMinute: 10, pollPerMinute: 10 },
+      retention: 'test',
+      features: { customUsername: true, pollInbox: true, attachments: false },
+      apiBase: 'https://pw.example.test',
+      auth: { type: 'none' },
+      domains: { mode: 'static', list: ['pw.example.test'] },
+      create: { path: '/accounts', method: 'POST', body: { address: '{{address}}', password: '{{password}}' }, responseMapping: { address: 'address', authData: {} } },
+      messages: { path: '/messages', authFrom: 'inbox', itemMapping: { id: 'id', from: 'from', subject: 'subject', excerpt: 'excerpt', receivedAt: 'receivedAt' } },
+      messageDetail: { path: '/messages/{{messageId}}', authFrom: 'inbox', responseMapping: { id: 'id', from: 'from', subject: 'subject', receivedAt: 'receivedAt' } },
+    });
+  }
+
+  /** Create one inbox and return the password actually sent upstream. */
+  async function capturePassword(): Promise<string> {
+    let sent = '';
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { address?: string; password?: string };
+      if (body.password) sent = body.password;
+      return new Response(JSON.stringify({ address: body.address ?? 'x@pw.example.test' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    try {
+      await passwordProvider().createInbox({ domain: 'pw.example.test' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    return sent;
+  }
+
+  it('sends a password upstream at all', async () => {
+    expect(await capturePassword()).not.toBe('');
+  });
+
+  it('does not repeat a password across accounts', async () => {
+    expect(await capturePassword()).not.toBe(await capturePassword());
+  });
+
+  // The lock: this password is the upstream mailbox's only credential, so it
+  // must come from a CSPRNG. Pinning Math.random would freeze any
+  // Math.random()-derived value — a constant password here means the
+  // generator regressed to a predictable sequence.
+  it('stays unpredictable even when Math.random is pinned', async () => {
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.42);
+    try {
+      expect(await capturePassword()).not.toBe(await capturePassword());
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('carries enough entropy to resist guessing', async () => {
+    const pw = await capturePassword();
+    expect(pw.length).toBeGreaterThanOrEqual(20);
+    expect(new Set(pw).size).toBeGreaterThan(8);
+  });
+});
+
 describe('template provider domain failure caching', () => {
   it('caches a failed domain fetch briefly instead of refetching every call', async () => {
     const provider = new TemplateProvider({

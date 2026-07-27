@@ -1,5 +1,6 @@
 import { BaseProvider, type ProviderMeta, type InboxData, type Message, type MessageDetail } from './base.js';
 import { fetchWithTimeout, randomString } from '../utils.js';
+import { randomSecret } from '../crypto.js';
 import { createLogger } from '../logger.js';
 import { errorMessage, UpstreamHttpError } from '../errors.js';
 
@@ -255,7 +256,10 @@ export class TemplateProvider extends BaseProvider {
       if (!domain) throw new Error(`[${this.cfg.name}] No domains available`);
     }
     const username = opts?.username || randomString(10);
-    const vars: Record<string, string> = { username, domain: domain || '', address: domain ? `${username}@${domain}` : '', password: randomString(12) };
+    // The password is the upstream account's only credential (mailtm/mailgw
+    // register with it, then trade it for a bearer token), so it needs a
+    // CSPRNG — randomString would leak the sequence. The username does not.
+    const vars: Record<string, string> = { username, domain: domain || '', address: domain ? `${username}@${domain}` : '', password: randomSecret() };
 
     const { create } = this.cfg;
 
