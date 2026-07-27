@@ -471,6 +471,11 @@ select{cursor:pointer}
 /* ─── Login ─── */
 .login-screen{position:fixed;inset:0;background:var(--app-bg);z-index:100;display:flex;align-items:center;justify-content:center}
 .login-screen.hidden{display:none}
+/* `authed` on <html> is set by the head script and toggled by enterApp/doLogout.
+   It is the single source of truth for which shell is on screen, so neither
+   view can paint before the token has been read. */
+html.authed .login-screen{display:none}
+html:not(.authed) #app-main{display:none}
 .login-box{width:360px;text-align:center}
 .login-logo{width:56px;height:56px;background:linear-gradient(135deg,var(--emerald),#2dd4bf);border-radius:14px;display:flex;align-items:center;justify-content:center;font-weight:var(--fw-bold);font-size:var(--text-2xl);color:var(--accent-contrast);margin:0 auto 20px;box-shadow:0 4px 20px rgba(52,211,153,.3)}
 .login-box h2{font-size:var(--text-xl);font-weight:var(--fw-semibold);margin-bottom:6px}
@@ -642,6 +647,15 @@ tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--emerald)}
   .scope-ind, .msg-expand-wrap, .crumb-arrow, .collapse-caret { transition: none !important; }
 }
 </style>
+<script>
+// Pick the opening view before the first paint. localStorage is synchronous,
+// so the answer is available here; deciding it down in the main script — the
+// last thing on a ~5.7k-line page — flashed the login screen at every
+// already-signed-in reload while the rest of the file parsed.
+try {
+  if (localStorage.getItem('token')) document.documentElement.classList.add('authed');
+} catch (e) { /* storage blocked: fall through to the login screen */ }
+</script>
 </head>
 <body>
 
@@ -656,7 +670,7 @@ tr.row-selected td:first-child{box-shadow:inset 3px 0 0 var(--emerald)}
   </form>
 </div>
 
-<div class="app" id="app-main" style="display:none">
+<div class="app" id="app-main">
   <!-- ─── Sidebar ─── -->
   <aside class="sidebar">
     <div class="logo-icon" aria-label="Mail Hub"><svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 24 V8.5 L16 19 L26.5 8.5 V24"/></svg></div>
@@ -5160,15 +5174,15 @@ function doLogout() {
   localStorage.removeItem('token');
   _isAdmin = false;
   closeMobileMore();
-  document.getElementById('login-screen').classList.remove('hidden');
-  document.getElementById('app-main').style.display = 'none';
+  document.documentElement.classList.remove('authed');
   document.getElementById('login-token').value = '';
   document.getElementById('login-error').textContent = '';
 }
 
 async function enterApp() {
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app-main').style.display = '';
+  // Idempotent on reload (the head script already set it); the load-bearing
+  // case is a fresh sign-in, where no token existed when the page opened.
+  document.documentElement.classList.add('authed');
   try {
     await api('/keys');
     _isAdmin = true;
@@ -5737,11 +5751,9 @@ function renderSystemInfo(info) {
 }
 
 // ─── Init ───
-if (getToken()) {
-  enterApp();
-} else {
-  document.getElementById('login-screen').classList.remove('hidden');
-}
+// Visibility is already settled by the head script; this is the data side of
+// entering the app (admin probe, dashboard load, i18n).
+if (getToken()) enterApp();
 
   (function loadOptionalExtensions() {
     const script = document.createElement('script');
