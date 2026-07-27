@@ -53,6 +53,65 @@ async function connectImap(account: ImapAccount): Promise<ImapFlow> {
   return client;
 }
 
+/** The subset of imapflow's BODYSTRUCTURE tree this module needs. */
+interface BodyNode {
+  part?: string;
+  type?: string;
+  disposition?: string;
+  parameters?: { charset?: string };
+  childNodes?: BodyNode[];
+}
+
+/**
+ * Resolve which body parts actually hold the displayable text/html.
+ *
+ * Part numbers cannot be assumed: '1'/'2' only line up for a flat
+ * multipart/alternative. A single-part message has no numbered children,
+ * and under multipart/mixed the text lives at '1.1'/'1.2' while '2' is an
+ * attachment. Worse, asking for a part that does not exist fails the whole
+ * FETCH rather than just that part, so the structure must be read first.
+ */
+export function selectBodyParts(root: BodyNode | undefined): { text?: string; html?: string } {
+  if (!root) return {};
+
+  // Non-multipart message: RFC 3501 numbers the whole body as part 1.
+  if (!root.childNodes?.length) {
+    const type = root.type ?? '';
+    if (type === 'text/html') return { html: '1' };
+    if (type.startsWith('text/')) return { text: '1' };
+    return {};
+  }
+
+  let text: string | undefined;
+  let html: string | undefined;
+  const walk = (node: BodyNode): void => {
+    for (const child of node.childNodes ?? []) {
+      if (child.childNodes?.length) {
+        walk(child);
+        continue;
+      }
+      // An attachment is not the message body even when it is text/*.
+      if (child.disposition === 'attachment') continue;
+      if (!text && child.type === 'text/plain') text = child.part;
+      if (!html && child.type === 'text/html') html = child.part;
+    }
+  };
+  walk(root);
+  return { text, html };
+}
+
+/** Decode a body buffer using the part's declared charset, not a blind utf8 cast. */
+export function decodeBody(buf: Buffer, charset?: string): string {
+  if (!buf.length) return '';
+  const label = (charset || 'utf-8').trim();
+  try {
+    return new TextDecoder(label).decode(buf);
+  } catch {
+    // Unknown/unsupported label — utf8 is the least-bad fallback.
+    return buf.toString('utf8');
+  }
+}
+
 interface PoolEntry { clientPromise: Promise<ImapFlow>; timer: ReturnType<typeof setTimeout>; }
 const pool = new Map<string, PoolEntry>();
 const IDLE_MS = 5 * 60 * 1000;
@@ -194,18 +253,34 @@ export class ImapProvider extends BaseProvider {
         const fetched = await client.fetchOne(messageId, {
           uid: true,
           envelope: true,
-          bodyParts: ['1', '2'],
+          bodyStructure: true,
         }, { uid: true });
 
         if (!fetched) throw new Error(`Message ${messageId} not found`);
 
+        const parts = selectBodyParts(fetched.bodyStructure as BodyNode | undefined);
+
+        // download() applies the Content-Transfer-Encoding decoder, so
+        // quoted-printable soft breaks cannot split a verification code the
+        // way a raw toString() left them.
+        const readPart = async (part: string): Promise<string> => {
+          const { meta, content } = await client.download(messageId, part, { uid: true });
+          const chunks: Buffer[] = [];
+          for await (const chunk of content) chunks.push(chunk as Buffer);
+          return decodeBody(Buffer.concat(chunks), meta?.charset);
+        };
+
         let text = '';
         let html = '';
-        try { text = fetched.bodyParts?.get('1')?.toString() ?? ''; } catch (error) {
-          log.warn('failed to read IMAP text body part', { accountId: account.id, messageId, error: errorMessage(error) });
+        if (parts.text) {
+          try { text = await readPart(parts.text); } catch (error) {
+            log.warn('failed to read IMAP text body part', { accountId: account.id, messageId, part: parts.text, error: errorMessage(error) });
+          }
         }
-        try { html = fetched.bodyParts?.get('2')?.toString() ?? ''; } catch (error) {
-          log.warn('failed to read IMAP html body part', { accountId: account.id, messageId, error: errorMessage(error) });
+        if (parts.html) {
+          try { html = await readPart(parts.html); } catch (error) {
+            log.warn('failed to read IMAP html body part', { accountId: account.id, messageId, part: parts.html, error: errorMessage(error) });
+          }
         }
 
         return {
