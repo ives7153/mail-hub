@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { getDb } from '../src/db.js';
-import { ImapProvider, selectBodyParts, decodeBody } from '../src/providers/imap.js';
+import { ImapProvider, selectBodyParts, decodeBody, generateUniqueUsername } from '../src/providers/imap.js';
+import { randomUsername } from '../src/username-generator.js';
 import type { InboxData } from '../src/providers/base.js';
 
 const imapMockState = vi.hoisted(() => ({
@@ -130,7 +131,10 @@ describe('ImapProvider', () => {
 
     const p = new ImapProvider();
     const inbox = await p.createInbox({ domain: 'example.com' });
-    expect(inbox.address).toMatch(/^[a-z0-9]+@example\.com$/);
+    // Contract changed on purpose: generated usernames are now human-shaped
+    // (mark.reyes52 / d_watson91 / juliahoffman), so the old flat [a-z0-9]+
+    // pattern no longer describes a correct address.
+    expect(inbox.address).toMatch(/^[a-z]+([._][a-z]+)?[0-9]{0,2}@example\.com$/);
     expect(inbox.provider).toBe('imap');
     expect(inbox.authData.imapAccountId).toBe('t1');
     expect(inbox.authData.domain).toBe('example.com');
@@ -308,5 +312,70 @@ describe('decodeBody', () => {
 
   it('returns an empty string for an empty buffer', () => {
     expect(decodeBody(Buffer.alloc(0), 'utf-8')).toBe('');
+  });
+});
+
+describe('randomUsername', () => {
+  const SAMPLES = Array.from({ length: 3000 }, () => randomUsername());
+
+  it.each([
+    ['is a mail-safe local part', (u: string) => expect(u).toMatch(/^[a-z]+([._][a-z]+)?[0-9]{0,2}$/)],
+    ['never leads with a separator', (u: string) => expect(u).not.toMatch(/^[._]/)],
+    ['never trails with a separator', (u: string) => expect(u).not.toMatch(/[._]$/)],
+    ['never doubles a separator', (u: string) => expect(u).not.toMatch(/[._]{2}/)],
+    ['stays a plausible length', (u: string) => {
+      expect(u.length).toBeGreaterThanOrEqual(4);
+      expect(u.length).toBeLessThanOrEqual(24);
+    }],
+  ])('every sample %s', (_name, assert) => {
+    for (const u of SAMPLES) assert(u);
+  });
+
+  it('mixes all three separator shapes rather than settling on one', () => {
+    expect(SAMPLES.some((u) => /^[a-z]+[0-9]{0,2}$/.test(u))).toBe(true);
+    expect(SAMPLES.some((u) => u.includes('.'))).toBe(true);
+    expect(SAMPLES.some((u) => u.includes('_'))).toBe(true);
+  });
+
+  it('mixes full first names with single initials', () => {
+    const separated = SAMPLES.filter((u) => /[._]/.test(u)).map((u) => u.split(/[._]/)[0]);
+    expect(separated.some((given) => given.length === 1)).toBe(true);
+    expect(separated.some((given) => given.length > 1)).toBe(true);
+  });
+
+  it('adds a digit suffix only some of the time', () => {
+    const withDigits = SAMPLES.filter((u) => /[0-9]$/.test(u)).length;
+    expect(withDigits).toBeGreaterThan(0);
+    expect(withDigits).toBeLessThan(SAMPLES.length);
+  });
+});
+
+describe('generateUniqueUsername', () => {
+  const holdAddress = (id: string, address: string, status: string): void => {
+    getDb().prepare(
+      `INSERT INTO inboxes (id, provider, address, auth_data, status) VALUES (?, 'imap', ?, '{}', ?)`,
+    ).run(id, address, status);
+  };
+
+  it('skips a username a live inbox already holds', () => {
+    holdAddress('held', 'taken@example.com', 'active');
+    const draws = ['taken', 'taken', 'free'];
+    let i = 0;
+    expect(generateUniqueUsername('example.com', () => draws[i++])).toBe('free');
+  });
+
+  it('reuses an address once the holding inbox is closed', () => {
+    holdAddress('gone', 'taken@example.com', 'closed');
+    expect(generateUniqueUsername('example.com', () => 'taken')).toBe('taken');
+  });
+
+  it('only treats a collision on the same domain as a collision', () => {
+    holdAddress('other', 'taken@other.com', 'active');
+    expect(generateUniqueUsername('example.com', () => 'taken')).toBe('taken');
+  });
+
+  it('falls back to a random suffix when every draw collides', () => {
+    holdAddress('held', 'taken@example.com', 'active');
+    expect(generateUniqueUsername('example.com', () => 'taken')).toMatch(/^taken[a-z0-9]{4}$/);
   });
 });

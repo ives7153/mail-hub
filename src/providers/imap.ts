@@ -2,6 +2,7 @@ import { ImapFlow } from 'imapflow';
 import { BaseProvider, PROVIDER, type InboxData, type Message, type MessageDetail } from './base.js';
 import { allRows, getDb, getRow } from '../db.js';
 import { randomString } from '../utils.js';
+import { randomUsername } from '../username-generator.js';
 import { createLogger } from '../logger.js';
 import { errorMessage, logIgnoredError } from '../errors.js';
 
@@ -51,6 +52,31 @@ async function connectImap(account: ImapAccount): Promise<ImapFlow> {
   });
   await client.connect();
   return client;
+}
+
+/**
+ * Draw a human-shaped username that no live inbox is already using.
+ *
+ * Unlike randomString(12), the human-shaped space is small enough (~7M) that
+ * a repeat is realistic, and `inboxes.address` carries no unique constraint.
+ * Two live inboxes on one address would read each other's mail, because a
+ * catch-all mailbox is sorted by the To header alone.
+ *
+ * `gen` is injectable so the collision path can be tested without relying on
+ * a lucky draw.
+ */
+export function generateUniqueUsername(domain: string, gen: () => string = randomUsername): string {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = gen();
+    const taken = getRow<{ one: number }>(
+      getDb(),
+      `SELECT 1 AS one FROM inboxes WHERE address = ? AND status = 'active' LIMIT 1`,
+      `${candidate}@${domain}`,
+    );
+    if (!taken) return candidate;
+  }
+  // Unlucky or genuinely crowded — a random suffix takes collision off the table.
+  return `${gen()}${randomString(4)}`;
 }
 
 /** The subset of imapflow's BODYSTRUCTURE tree this module needs. */
@@ -196,7 +222,7 @@ export class ImapProvider extends BaseProvider {
       account = accounts[Math.floor(Math.random() * accounts.length)];
     }
 
-    const username = opts?.username || randomString(12);
+    const username = opts?.username || generateUniqueUsername(account.domain);
 
     return {
       address: `${username}@${account.domain}`,
