@@ -1182,6 +1182,13 @@ Omit to check all.
 
 All mounted under `/api/imap`.
 
+One catch-all mailbox backs many concurrent inboxes: Mail Hub invents an
+address per inbox and sorts the shared mailbox by recipient. Generated local
+parts are name-shaped rather than a random string — `nathanlambert@`,
+`lisa.chen@`, `d_watson91@`, `vera.oconnell8@` — and an address a live inbox
+already holds is never reissued. Pass `username` on `POST /api/inbox` to pick
+the local part yourself.
+
 ### GET /api/imap/stats — Pool Statistics
 
 **Response 200**:

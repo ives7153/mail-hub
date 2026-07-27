@@ -105,7 +105,7 @@ These are built into the code (not templates). Configurable via the **Provider M
 |----------|------|-------------|
 | Outlook | Account Pool | Import Outlook accounts, complete missing authorization, 1:1 assignment, returned to pool on close; optional `+` sub-address alias; the account page can read the whole mailbox, grouped by lease |
 | YYDS Mail | API Key Pool | Import keys, round-robin rotation, 20,000 calls/day per key |
-| IMAP Domain Email | Account Pool | Connect your own domain via IMAP with catch-all; highest trust level |
+| IMAP Domain Email | Account Pool | Connect your own domain via IMAP with catch-all; one mailbox backs many inboxes, with name-shaped generated addresses; highest trust level |
 
 ## Custom Providers
 

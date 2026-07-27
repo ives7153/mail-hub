@@ -293,8 +293,13 @@ PATCH  /api/yyds/accounts/wildcard      — Set wildcard support (body: { "keys"
 ### IMAP / Custom Domain Email
 
 Connect your own domain email via IMAP. One IMAP account with catch-all
-enabled serves as a pool resource — the dispatcher generates random
-addresses under your domain (e.g. x7k2@mydomain.com).
+enabled serves as a pool resource — the dispatcher invents an address
+under your domain for each inbox and sorts the shared mailbox by
+recipient, so one mailbox backs many concurrent inboxes.
+
+Generated local parts are name-shaped rather than a random string
+(nathanlambert, lisa.chen, d_watson91, vera.oconnell8); pass "username"
+to choose your own. Addresses in use by a live inbox are never reissued.
 
 Prerequisites (done outside Mail Hub):
   - A domain with catch-all email enabled
@@ -302,7 +307,7 @@ Prerequisites (done outside Mail Hub):
 
 Usage:
   POST /api/inbox { "provider": "imap", "for": "twitter.com", "domain": "mydomain.com" }
-  → address: "random@mydomain.com"
+  → address: "juliahoffman@mydomain.com"
 
 The "domain" field is optional — if omitted, a random configured domain is picked.
 Auto-dispatch: on by default (free). IMAP is scored with high trust (trustLevel=10)

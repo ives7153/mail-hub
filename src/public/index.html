@@ -1879,7 +1879,7 @@ try {
           <!-- ── IMAP 域名邮箱 ── -->
           <div class="docs-section">
             <h2 data-i18n="docs.imap_title">IMAP 域名邮箱</h2>
-            <p data-i18n-html="docs.imap_desc">通过 IMAP 连接你自己的域名邮箱，利用 catch-all 机制生成随机收件地址。添加账号后，在创建邮箱时指定 <code>provider: "imap"</code> 即可通过自己的域名收验证码。所有 IMAP 管理接口仅限管理员调用。</p>
+            <p data-i18n-html="docs.imap_desc">通过 IMAP 连接你自己的域名邮箱，利用 catch-all 机制为每个收件箱生成一个地址，再按收件人从共用邮箱里分拣，因此一个邮箱可同时支撑多个收件箱。生成的地址是人名形态（<code>nathanlambert@</code>、<code>lisa.chen@</code>、<code>d_watson91@</code>）而非随机字符串，已被占用的地址不会重复发放；传 <code>username</code> 可自己指定。添加账号后，在创建邮箱时指定 <code>provider: "imap"</code> 即可通过自己的域名收验证码。所有 IMAP 管理接口仅限管理员调用。</p>
 
             <div class="docs-endpoint" id="doc-im-stats">
               <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
@@ -2715,7 +2715,7 @@ zh: {
 'docs.yd_check_desc':'验证 Key 有效性','docs.yd_check_param_keys':'指定检测的 Key，不填则检测全部','docs.yd_check_note':'通过向上游 API 发送探测请求来判断 Key 是否仍然有效，结果同步更新到数据库 status 字段。',
 'docs.yd_wildcard_desc':'设置 Wildcard 支持','docs.yd_wildcard_param_keys':'要设置的 API Key 数组','docs.yd_wildcard_param_wildcard':'是否支持泛子域名，默认 <code>false</code>','docs.yd_wildcard_note':'通常不需要手动设置。系统会在创建邮箱时自动探测 Key 是否支持 wildcard，并记录结果（<code>supports_wildcard</code> 字段：<code>null</code>=未知, <code>0</code>=不支持, <code>1</code>=支持）。',
 // Docs - IMAP pool section
-'docs.imap_title':'IMAP 域名邮箱','docs.imap_desc':'通过 IMAP 连接你自己的域名邮箱，利用 catch-all 机制生成随机收件地址。添加账号后，在创建邮箱时指定 <code>provider: "imap"</code> 即可通过自己的域名收验证码。所有 IMAP 管理接口仅限管理员调用。',
+'docs.imap_title':'IMAP 域名邮箱','docs.imap_desc':'通过 IMAP 连接你自己的域名邮箱，利用 catch-all 机制为每个收件箱生成一个地址，再按收件人从共用邮箱里分拣，因此一个邮箱可同时支撑多个收件箱。生成的地址是人名形态（<code>nathanlambert@</code>、<code>lisa.chen@</code>、<code>d_watson91@</code>）而非随机字符串，已被占用的地址不会重复发放；传 <code>username</code> 可自己指定。添加账号后，在创建邮箱时指定 <code>provider: "imap"</code> 即可通过自己的域名收验证码。所有 IMAP 管理接口仅限管理员调用。',
 'docs.im_stats_desc':'池统计','docs.im_list_desc':'列出所有 IMAP 账号','docs.im_list_one_desc':'查看单个 IMAP 账号详情','docs.im_add_desc':'添加 IMAP 账号','docs.im_update_desc':'更新 IMAP 账号','docs.im_delete_desc':'删除 IMAP 账号','docs.im_test_desc':'测试 IMAP 连接',
 'docs.im_list_note':'密码不会在列表或详情响应中返回。',
 'docs.im_add_param_host':'IMAP 服务器地址','docs.im_add_param_port':'端口，默认 993','docs.im_add_param_user':'邮箱用户名','docs.im_add_param_password':'邮箱密码或应用专用密码','docs.im_add_param_domain':'收件域名（需开启 catch-all）','docs.im_add_param_tls':'是否启用 TLS，默认 true',
@@ -2825,7 +2825,7 @@ en: {
 'docs.yd_check_desc':'Verify key validity','docs.yd_check_param_keys':'Keys to check, checks all if omitted','docs.yd_check_note':'Sends a probe request to the upstream API to check if the key is still valid. Results are synced to the database status field.',
 'docs.yd_wildcard_desc':'Set wildcard support','docs.yd_wildcard_param_keys':'Array of API keys to configure','docs.yd_wildcard_param_wildcard':'Whether wildcard subdomains are supported, default <code>false</code>','docs.yd_wildcard_note':'Usually no manual configuration needed. The system auto-detects wildcard support when creating inboxes and records the result (<code>supports_wildcard</code>: <code>null</code>=unknown, <code>0</code>=not supported, <code>1</code>=supported).',
 // Docs - IMAP pool section
-'docs.imap_title':'IMAP Domain Mail','docs.imap_desc':'Connect your own domain email via IMAP. Uses catch-all to generate random addresses under your domain. Add an account, then create inboxes with <code>provider: "imap"</code> to receive verification codes on your own domain. All IMAP management endpoints are admin-only.',
+'docs.imap_title':'IMAP Domain Mail','docs.imap_desc':'Connect your own domain email via IMAP. One catch-all mailbox backs many inboxes at once: Mail Hub invents an address per inbox and sorts the shared mailbox by recipient. Generated addresses are name-shaped (<code>nathanlambert@</code>, <code>lisa.chen@</code>, <code>d_watson91@</code>) rather than a random string, and one a live inbox holds is never reissued; pass <code>username</code> to choose your own. Add an account, then create inboxes with <code>provider: "imap"</code> to receive verification codes on your own domain. All IMAP management endpoints are admin-only.',
 'docs.im_stats_desc':'Pool statistics','docs.im_list_desc':'List all IMAP accounts','docs.im_list_one_desc':'View IMAP account details','docs.im_add_desc':'Add IMAP account','docs.im_update_desc':'Update IMAP account','docs.im_delete_desc':'Delete IMAP account','docs.im_test_desc':'Test IMAP connection',
 'docs.im_list_note':'Password is never returned in list or detail responses.',
 'docs.im_add_param_host':'IMAP server hostname','docs.im_add_param_port':'Port, defaults to 993','docs.im_add_param_user':'Email username','docs.im_add_param_password':'Email password or app password','docs.im_add_param_domain':'Receiving domain (catch-all required)','docs.im_add_param_tls':'Enable TLS, defaults to true',
