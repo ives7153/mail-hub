@@ -5,6 +5,34 @@ import { OutlookProvider } from '../src/providers/outlook.js';
 import { app, authHeaders, jsonHeaders } from './helpers/http.js';
 
 describe('Outlook account allocation', () => {
+  it('ignores a stale release for an account someone else now holds', async () => {
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO outlook_accounts (email, password, client_id, refresh_token, token_status)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run('contested@outlook.test', 'pw', 'client', 'refresh', 'valid');
+
+    const p = new OutlookProvider();
+    const first = await p.createInbox({ inboxId: 'ib-old' });
+    await p.releaseInbox(first, 'ib-old');
+    const second = await p.createInbox({ inboxId: 'ib-new' });
+
+    // app.ts:537-553 re-releases an already-closed inbox a day after cleanup
+    // closed it, so a replayed release is routine rather than hypothetical.
+    // Freeing by email would hand this mailbox to a second live inbox.
+    await p.releaseInbox(first, 'ib-old');
+    // Explicit deletion runs deleteInbox first, which must not free it either.
+    await p.deleteInbox(first);
+
+    const assigned = getRow<{ assigned_inbox_id: string | null }>(
+      db,
+      `SELECT assigned_inbox_id FROM outlook_accounts WHERE email = ?`,
+      'contested@outlook.test',
+    );
+    expect(second.authData.email).toBe('contested@outlook.test');
+    expect(assigned?.assigned_inbox_id).toBe('ib-new');
+  });
+
   it('reserves the selected account with the final inbox id during creation', async () => {
     const db = getDb();
     db.prepare(

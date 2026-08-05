@@ -10,6 +10,7 @@ import { outlookRoutes } from './routes/outlook.js';
 import { keyRoutes } from './routes/keys.js';
 import { yydsRoutes } from './routes/yyds.js';
 import { imapRoutes } from './routes/imap.js';
+import { icloudRoutes } from './routes/icloud.js';
 import { serviceRoutes } from './routes/services.js';
 import { templateProviderRoutes } from './routes/template-providers.js';
 import { allRows, DEFAULT_SETTINGS, getDb, getRow, getSetting, logActivity } from './db.js';
@@ -17,6 +18,7 @@ import { hashApiKey, secureCompare } from './crypto.js';
 import { requireAdmin, type AdminEnv } from './routes/admin.js';
 import { parseStoredInbox, releaseInboxResources } from './inbox-lifecycle.js';
 import { checkToken } from './providers/outlook.js';
+import { reapOrphanedAddresses } from './providers/icloud.js';
 import { createLogger } from './logger.js';
 import { settingsRoutes } from './routes/settings.js';
 import { runConcurrent, todayDateString } from './utils.js';
@@ -99,6 +101,7 @@ Request body (JSON):
     "provider": "mailtm",      // (optional) force a specific provider
     "domain": "example.com",   // (optional) request a specific email domain
     "subdomain": "team-a",    // (optional) wildcard child domain prefix (YYDS provider only)
+    "account": "me@icloud.com", // (optional) which pooled account to draw from (iCloud provider only)
     "alias": true,             // (optional) ask for a sub-address — see "Aliases" below
     "duration": 600,           // (optional) desired lifetime in seconds
     "needPolling": true        // (optional, default true) whether inbox must support polling
@@ -258,6 +261,47 @@ The operator can enable auto-dispatch for any provider through the admin panel.
 Uses a pool of pre-imported Microsoft accounts (1:1 assignment per inbox).
 Accounts are returned to the pool when the inbox is closed.
 Auto-dispatch: off by default (paid). Use provider: "outlook" to request explicitly.
+
+### iCloud / Hide My Email
+
+Mints @icloud.com addresses through iCloud+ Hide My Email, so the Apple ID must
+have an iCloud+ subscription. An admin configures the Apple ID and authenticates
+Hide My Email with either a pasted iCloud cookie blob or the SRP sign-in flow.
+The account also needs IMAP credentials, including the app-specific password,
+for the mailbox Hide My Email forwards to.
+
+Mail Hub reads mail over IMAP from the operator's own forwarding mailbox and
+sorts the shared mailbox by exact recipient. Each inbox therefore sees only
+messages addressed to its assigned alias.
+
+Inbox creation claims an address from a pre-minted pool, and a background task
+tops the pool up. Addresses return to the pool when an inbox is closed: each
+Apple ID has a lifetime cap of 750 Hide My Email addresses, so aliases are
+recycled rather than burned. Retiring an address deactivates it at Apple and is
+irreversible; use it only for an address that must never be issued again.
+
+When multiple Apple IDs are configured, use the optional "account" field
+documented under POST /api/inbox to choose which account's pool to draw from.
+Omit it to draw from any usable account.
+
+Auto-dispatch: off by default (paid). Use provider: "icloud" to request explicitly.
+
+#### iCloud Pool Management (admin only)
+
+GET    /api/icloud/accounts                         — List accounts (secrets excluded)
+POST   /api/icloud/accounts                         — Add an account with pasted cookies and forwarding-mailbox IMAP credentials
+DELETE /api/icloud/accounts/:id                     — Remove an account
+POST   /api/icloud/accounts/:id/test                — Test Hide My Email and IMAP access
+POST   /api/icloud/accounts/:id/cookies             — Replace an expired pasted cookie blob
+POST   /api/icloud/accounts/:id/srp/begin           — Begin or renew an SRP sign-in (body: { "password": "..." })
+GET    /api/icloud/srp/:sessionId/phones            — List trusted phones for SMS verification
+POST   /api/icloud/srp/:sessionId/sms               — Send an SMS code (body: { "phoneId": 1 })
+POST   /api/icloud/accounts/:id/srp/complete        — Complete SRP sign-in (body: { "sessionId": "...", "code": "123456" })
+GET    /api/icloud/addresses                        — List the pre-minted address pool
+POST   /api/icloud/accounts/:id/generate            — Mint addresses now (body: { "count": 1 }, maximum 5)
+POST   /api/icloud/addresses/:hme/retire            — Irreversibly deactivate and retire an address
+GET    /api/icloud/addresses/:hme/messages          — Read mail for one address
+GET    /api/icloud/addresses/:hme/messages/:uid     — Read one message for that address
 
 ### YYDS Mail
 Uses a pool of API keys to call the YYDS Mail upstream API.
@@ -482,6 +526,7 @@ export function createApp(): Hono<AdminEnv> {
   app.route('/api', keyRoutes);
   app.route('/api', yydsRoutes);
   app.route('/api', imapRoutes);
+  app.route('/api', icloudRoutes);
   app.route('/api', serviceRoutes);
   app.route('/api', templateProviderRoutes);
   app.route('/api', settingsRoutes);
@@ -561,16 +606,29 @@ export async function cleanupExpired(): Promise<void> {
     //    outage can never starve them.
     db.prepare(`DELETE FROM fail_log WHERE datetime(reported_at) < datetime('now', ?)`).run(`-${retentionFailLogDays} days`);
     db.prepare(`DELETE FROM activity_log WHERE datetime(created_at) < datetime('now', ?)`).run(`-${retentionActivityDays} days`);
+    // SRP sessions live five minutes; a day of grace keeps failures readable
+    // for post-mortem, after which the rows are pure accumulation.
+    db.prepare(`DELETE FROM icloud_auth_sessions WHERE datetime(expires_at) < datetime('now', '-1 day')`).run();
 
     // 4. Free Outlook accounts whose assigned inbox no longer exists (process
     //    crashed between pool claim and inbox insert, or row purged abnormally).
+    //    The age floor spares an account claimed moments ago whose inbox row is
+    //    about to be written — reaping inside that window hands one account to
+    //    two inboxes. NULL assigned_at is a pre-migration claim of unknowable
+    //    age, which reaps as before.
     const reaped = db.prepare(
-      `UPDATE outlook_accounts SET assigned_inbox_id = NULL
+      `UPDATE outlook_accounts SET assigned_inbox_id = NULL, assigned_at = NULL
        WHERE assigned_inbox_id IS NOT NULL
-         AND assigned_inbox_id NOT IN (SELECT id FROM inboxes)`,
+         AND assigned_inbox_id NOT IN (SELECT id FROM inboxes)
+         AND (assigned_at IS NULL OR datetime(assigned_at) < datetime('now', '-10 minutes'))`,
     ).run();
     if (reaped.changes > 0) {
       log.info('released orphaned Outlook assignments', { count: reaped.changes });
+    }
+
+    const reapedIcloud = reapOrphanedAddresses();
+    if (reapedIcloud > 0) {
+      log.info('released orphaned iCloud addresses', { count: reapedIcloud });
     }
 
     // 5. Daily Outlook token check. 'unknown' (network/throttle/5xx) must never

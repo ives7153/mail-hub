@@ -303,6 +303,7 @@ input:focus,select:focus{border-color:var(--emerald);box-shadow:var(--focus-ring
 input:disabled,select:disabled{opacity:var(--disabled-opacity);cursor:not-allowed}
 input::placeholder{color:var(--text3)}
 select{cursor:pointer}
+.cell-sub{font-size:var(--text-base);color:var(--text3);margin-top:2px}
 .textarea{width:100%;background:var(--control-bg);border:1px solid var(--border);color:var(--text);padding:10px 12px;border-radius:var(--radius-sm);font-size:var(--ctl-fs-md);font-family:var(--font-mono);outline:none;transition:border-color var(--dur-fast) var(--ease-out),box-shadow var(--dur-fast) var(--ease-out),background-color var(--dur-fast) var(--ease-out);resize:vertical}
 .textarea:focus{border-color:var(--emerald);box-shadow:var(--focus-ring)}
 
@@ -707,6 +708,10 @@ try {
       <div class="nav-icon" data-view="imap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></div>
       <span class="tooltip" data-i18n="nav.imap">IMAP 域名邮箱</span>
     </div>
+    <div class="tooltip-wrap">
+      <div class="nav-icon" data-view="icloud"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 8.5 4.5 4.5 0 0 0 6.5 19Z"/><path d="m9 13 2 2 4-4"/></svg></div>
+      <span class="tooltip" data-i18n="nav.icloud">iCloud 别名</span>
+    </div>
     <div class="tooltip-wrap" id="nav-templates" style="display:none">
       <div class="nav-icon" data-view="templates"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.23 8.77c.24-.24.581-.353.917-.303.515.077.877.528 1.073 1.01a2.5 2.5 0 1 0 3.259-3.259c-.482-.196-.933-.558-1.01-1.073-.05-.336.062-.676.303-.917l1.525-1.525A2.402 2.402 0 0 1 12 1.998c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z"/></svg></div>
       <span class="tooltip" data-i18n="nav.templates">自定义渠道</span>
@@ -1013,6 +1018,18 @@ try {
             <a href="#doc-im-add" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_im_add">添加账号</span></a>
             <a href="#doc-im-update" onclick="return scrollDoc(event)"><span class="method m-put">PUT</span><span data-i18n="docs.nav_im_update">更新账号</span></a>
             <a href="#doc-im-delete" onclick="return scrollDoc(event)"><span class="method m-delete">DEL</span><span data-i18n="docs.nav_im_delete">删除账号</span></a>
+          </div>
+          <div class="docs-nav-group">
+            <div class="docs-nav-group-title" data-i18n="docs.icloud_pool">iCloud 别名</div>
+            <a href="#doc-ic-list" onclick="return scrollDoc(event)"><span class="method m-get">GET</span><span data-i18n="docs.nav_ic_list">Apple ID 列表</span></a>
+            <a href="#doc-ic-add" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ic_add">添加 Apple ID</span></a>
+            <a href="#doc-ic-test" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ic_test">检测两半</span></a>
+            <a href="#doc-ic-cookies" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ic_cookies">更换 Cookie</span></a>
+            <a href="#doc-ic-srp" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ic_srp">SRP 登录</span></a>
+            <a href="#doc-ic-generate" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ic_generate">生成地址</span></a>
+            <a href="#doc-ic-addresses" onclick="return scrollDoc(event)"><span class="method m-get">GET</span><span data-i18n="docs.nav_ic_addresses">地址池</span></a>
+            <a href="#doc-ic-mail" onclick="return scrollDoc(event)"><span class="method m-get">GET</span><span data-i18n="docs.nav_ic_mail">按地址读信</span></a>
+            <a href="#doc-ic-retire" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_ic_retire">停用地址</span></a>
             <a href="#doc-im-test" onclick="return scrollDoc(event)"><span class="method m-post">POST</span><span data-i18n="docs.nav_im_test">测试连接</span></a>
           </div>
           <div class="docs-nav-group">
@@ -1993,6 +2010,145 @@ try {
               </div>
             </div>
 
+            <div class="docs-section-title" data-i18n="docs.icloud_pool">iCloud 别名</div>
+            <div class="docs-note" data-i18n="docs.ic_intro">隐藏邮件是转发别名，不是信箱：Apple 没有按别名读信的 API。所以这个渠道分两半——签发地址走 Apple 私有接口，收信走「转发目标信箱」的 IMAP。转发目标常常不是 Apple 信箱（Apple ID 用 gmail 注册时就得连 imap.gmail.com）。需要 iCloud+ 订阅；一个 Apple ID 一辈子 750 个地址，所以地址回收复用而不是用完即弃。</div>
+
+            <div class="docs-endpoint" id="doc-ic-list">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-get">GET</span>
+                <span class="path">/api/icloud/accounts</span>
+                <span class="desc" data-i18n="docs.ic_list_desc">列出所有 Apple ID</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-label" data-i18n="docs.response_200">响应 200</div>
+                <pre class="docs-code">{
+  <span class="ck">"accounts"</span>: <span class="cs">[</span>
+    { <span class="ck">"id"</span>: <span class="cs">"uuid"</span>, <span class="ck">"apple_id"</span>: <span class="cs">"me@gmail.com"</span>,
+      <span class="ck">"region"</span>: <span class="cs">"global"</span>, <span class="ck">"auth_mode"</span>: <span class="cs">"srp"</span>,
+      <span class="ck">"imap_host"</span>: <span class="cs">"imap.gmail.com"</span>, <span class="ck">"imap_user"</span>: <span class="cs">"me@gmail.com"</span>,
+      <span class="ck">"status"</span>: <span class="cs">"active"</span>, <span class="ck">"last_error"</span>: <span class="cs">null</span> }
+  ]
+}</pre>
+                <div class="docs-note" data-i18n="docs.ic_status_note">status 三态：active 两半都通；degraded 会话过期，池里现有地址照常收信但不能签发新的；error 收信不可用，调度会跳过。Cookie、Apple ID 密码、信任令牌、IMAP 密码一律不返回。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ic-add">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-post">POST</span>
+                <span class="path">/api/icloud/accounts</span>
+                <span class="desc" data-i18n="docs.ic_add_desc">添加 Apple ID</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-label" data-i18n="docs.request_body">请求体</div>
+                <pre class="docs-code">{
+  <span class="ck">"appleId"</span>: <span class="cs">"me@gmail.com"</span>,
+  <span class="ck">"region"</span>: <span class="cs">"global"</span>,
+  <span class="ck">"cookies"</span>: <span class="cs">"&lt;整坨粘贴&gt;"</span>,
+  <span class="ck">"imapUser"</span>: <span class="cs">"me@gmail.com"</span>,
+  <span class="ck">"imapPassword"</span>: <span class="cs">"&lt;应用专用密码&gt;"</span>,
+  <span class="ck">"imapHost"</span>: <span class="cs">"imap.gmail.com"</span>,
+  <span class="ck">"imapPort"</span>: <span class="cv">993</span>
+}</pre>
+                <div class="docs-note" data-i18n="docs.ic_add_note">cookies 接受浏览器给的任何形式：复制为 cURL（任意 shell）、复制为 PowerShell、Cookie 扩展导出的 JSON、或纯 Cookie 请求头。缺 X-APPLE-WEBAUTH-TOKEN 或 X-APPLE-WEBAUTH-USER 会直接 400 并指名缺哪个，而不是存下来等以后失败。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ic-test">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-post">POST</span>
+                <span class="path">/api/icloud/accounts/:id/test</span>
+                <span class="desc" data-i18n="docs.ic_test_desc">同时检测签发与收信两半</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-label" data-i18n="docs.response_200">响应 200</div>
+                <pre class="docs-code">{
+  <span class="ck">"ok"</span>: <span class="cv">false</span>,
+  <span class="ck">"forwardTo"</span>: <span class="cs">"me@gmail.com"</span>,
+  <span class="ck">"forwardMismatch"</span>: <span class="cs">null</span>,
+  <span class="ck">"hmeError"</span>: <span class="cs">null</span>,
+  <span class="ck">"imapError"</span>: <span class="cs">"authentication rejected: ..."</span>
+}</pre>
+                <div class="docs-note" data-i18n="docs.ic_test_note">两半的错误分开返回，因为它们在不同地方修：Cookie 归 Apple 网页，IMAP 密码归收信邮箱的服务商。forwardTo 是隐藏邮件实际投递到的信箱，跟 IMAP 登录名不一致时 forwardMismatch 会直说。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ic-cookies">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-post">POST</span>
+                <span class="path">/api/icloud/accounts/:id/cookies</span>
+                <span class="desc" data-i18n="docs.ic_cookies_desc">就地更换过期 Cookie</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-note" data-i18n="docs.ic_cookies_note">保留地址池。删号重建会把它持有的每一个别名一起烧掉——每个都占 750 名额中的一个。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ic-srp">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-post">POST</span>
+                <span class="path">/api/icloud/accounts/:id/srp/begin</span>
+                <span class="desc" data-i18n="docs.ic_srp_desc">SRP 登录，用信任令牌取代 Cookie</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-label" data-i18n="docs.request_body">请求体</div>
+                <pre class="docs-code">{ <span class="ck">"password"</span>: <span class="cs">"&lt;Apple ID 密码&gt;"</span> }
+→ { <span class="ck">"sessionId"</span>: <span class="cs">"..."</span>, <span class="ck">"needsMfa"</span>: <span class="cv">true</span> }</pre>
+                <div class="docs-label" data-i18n="docs.ic_srp_then">随后</div>
+                <pre class="docs-code">GET  /api/icloud/srp/:sessionId/phones      <span class="cc">// 可选：手机号列表</span>
+POST /api/icloud/srp/:sessionId/sms         { <span class="ck">"phoneId"</span>: <span class="cv">1</span> }
+POST /api/icloud/accounts/:id/srp/complete  { <span class="ck">"sessionId"</span>: <span class="cs">"..."</span>, <span class="ck">"code"</span>: <span class="cs">"123456"</span> }</pre>
+                <div class="docs-note" data-i18n="docs.ic_srp_note">Cookie 几小时过期，信任令牌能撑很久，所以 6 位码是每个 Apple ID 输一次而不是每次会话输一次。Apple 认可已存的信任令牌时 needsMfa 为 false，根本不推码。会话 5 分钟过期；握手中间态在内存里，这期间重启会丢失，重新登录即可。手边没有苹果设备时用 phones + sms 走短信。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ic-generate">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-post">POST</span>
+                <span class="path">/api/icloud/accounts/:id/generate</span>
+                <span class="desc" data-i18n="docs.ic_generate_desc">立刻生成地址（手动补货）</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-label" data-i18n="docs.request_body">请求体</div>
+                <pre class="docs-code">{ <span class="ck">"count"</span>: <span class="cv">1</span> }   <span class="cc">// 最多 5</span>
+→ { <span class="ck">"created"</span>: <span class="cv">1</span>, <span class="ck">"addresses"</span>: <span class="cs">["quiet.fox42@icloud.com"]</span> }</pre>
+                <div class="docs-note" data-i18n="docs.ic_generate_note">常规路径是后台自动补货，这个是应急用的。Apple 拒绝时原样返回它自己的措辞——它的错误分类没有公开文档，不做臆测的归类。自动补货的开关和目标值在 iCloud 页面上，或走 PATCH /api/admin/settings 的 icloud_pool_enabled / icloud_pool_target（目标值钳到 750）。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ic-addresses">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-get">GET</span>
+                <span class="path">/api/icloud/addresses</span>
+                <span class="desc" data-i18n="docs.ic_addresses_desc">地址池</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-note" data-i18n="docs.ic_addresses_note">state 三态：free 在池中可领用；assigned 被某个活着的 inbox 持有；retired 已在 Apple 侧停用、永不再发，它占的名额也永久花掉了。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ic-mail">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-get">GET</span>
+                <span class="path">/api/icloud/addresses/:hme/messages</span>
+                <span class="desc" data-i18n="docs.ic_mail_desc">按地址读信（含 /:uid 详情）</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-note" data-i18n="docs.ic_mail_note">这个地址收到过的所有邮件，不像 /api/inbox/:id/messages 会隐藏比 inbox 更早的信。用来回答「这个地址到底收到过东西没有」。</div>
+              </div>
+            </div>
+
+            <div class="docs-endpoint" id="doc-ic-retire">
+              <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
+                <span class="method-tag m-post">POST</span>
+                <span class="path">/api/icloud/addresses/:hme/retire</span>
+                <span class="desc" data-i18n="docs.ic_retire_desc">停用被烧掉的地址</span>
+              </div>
+              <div class="docs-endpoint-body">
+                <div class="docs-note" data-i18n="docs.ic_retire_note">在 Apple 侧关闭转发并永不再分配。有 inbox 正持有时返回 409。它占的那个名额不会还回来——750 是一个 Apple ID 一辈子的总数。</div>
+              </div>
+            </div>
+
             <div class="docs-endpoint" id="doc-im-delete">
               <div class="docs-endpoint-header" onclick="return this.parentElement.classList.toggle('open')">
                 <span class="method-tag m-delete">DELETE</span>
@@ -2233,8 +2389,10 @@ Authorization: Bearer &lt;your-api-key&gt;
       </div>
 
       <div id="ol-panels-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="panel">
-          <div class="panel-header"><span class="panel-title"><span data-i18n="outlook.import">导入账号</span></span></div>
+        <div class="panel collapsible" id="ol-import-panel">
+          <div class="panel-header" onclick="return toggleOutlookPanelRow()">
+            <span class="panel-title"><span class="collapse-caret"></span><span data-i18n="outlook.import">导入账号</span></span>
+          </div>
           <div style="padding:16px 20px">
             <textarea id="ol-import-text" class="textarea" rows="5" placeholder="邮箱----密码&#10;邮箱----密码----ClientID----refresh_token&#10;每行一个账号" data-i18n-ph="outlook.import_placeholder"></textarea>
             <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
@@ -2246,9 +2404,9 @@ Authorization: Bearer &lt;your-api-key&gt;
         </div>
       </div>
 
-      <div class="panel" id="ol-oauth-panel" style="margin-bottom:16px">
-          <div class="panel-header">
-            <span class="panel-title"><span data-i18n="outlook.oauth_settings">Thunderbird 授权补全</span></span>
+      <div class="panel collapsible" id="ol-oauth-panel" style="margin-bottom:16px">
+          <div class="panel-header" onclick="return toggleFoldPanel('ol-oauth-panel')">
+            <span class="panel-title"><span class="collapse-caret"></span><span data-i18n="outlook.oauth_settings">Thunderbird 授权补全</span></span>
           </div>
           <div style="padding:16px 20px">
             <p data-i18n="outlook.oauth_thunderbird_hint" style="margin:0 0 8px;font-size:var(--text-sm);color:var(--text2);line-height:1.6"></p>
@@ -2392,6 +2550,91 @@ Authorization: Bearer &lt;your-api-key&gt;
         <table>
           <thead><tr><th><input type="checkbox" id="imap-check-all" onchange="return toggleAllImap(this.checked)"></th><th data-i18n="common.host">主机</th><th data-i18n="common.port">端口</th><th data-i18n="common.user">用户名</th><th data-i18n="common.domain">域名</th><th data-i18n="common.status">状态</th><th data-i18n="imap.tls">TLS</th><th data-i18n="imap.last_checked">最后检测</th><th data-i18n="common.actions">操作</th></tr></thead>
           <tbody id="imap-account-list"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="v-icloud" class="view">
+      <div class="page-header">
+        <div class="page-title-area">
+          <h1 class="page-title" data-i18n="icloud.title">iCloud 别名</h1>
+          <span class="page-tag" id="icloud-status" data-i18n="common.loading">Loading...</span>
+        </div>
+      </div>
+
+      <div class="cards">
+        <div class="card"><div class="card-icon ci-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.34 8.5 4.5 4.5 0 0 0 6.5 19Z"/></svg></div><div class="card-label" data-i18n="icloud.accounts">Apple ID</div><div class="card-value" id="icloud-total">-</div></div>
+        <div class="card"><div class="card-icon ci-emerald"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg></div><div class="card-label" data-i18n="icloud.free">可用地址</div><div class="card-value" id="icloud-free">-</div></div>
+        <div class="card"><div class="card-icon ci-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></div><div class="card-label" data-i18n="icloud.assigned">已占用</div><div class="card-value" id="icloud-assigned">-</div></div>
+      </div>
+
+      <div class="panel collapsible" id="icloud-add-panel" style="margin-bottom:16px">
+        <div class="panel-header" onclick="return toggleIcloudAddPanel()">
+          <span class="panel-title"><span class="collapse-caret"></span><span data-i18n="icloud.add_account">添加 Apple ID</span></span>
+        </div>
+        <div style="padding:0 20px 8px;font-size:var(--text-base);color:var(--text3);line-height:1.9" data-i18n-html="icloud.help"></div>
+        <div class="form-row">
+          <div class="form-group"><label data-i18n="icloud.apple_id">Apple ID</label><input id="icloud-apple-id" placeholder="you@icloud.com"></div>
+          <div class="form-group auto-width"><label data-i18n="icloud.region">区域</label><select id="icloud-region"><option value="global">Global</option><option value="china">中国区</option></select></div>
+          <div class="form-group"><label data-i18n="icloud.imap_user">收信邮箱</label><input id="icloud-imap-user" oninput="return suggestIcloudImapHost()" data-i18n-ph="icloud.imap_user_ph" placeholder="Apple 的隐藏邮件地址实际转发到的那个信箱"></div>
+          <div class="form-group"><label data-i18n="icloud.imap_password">邮箱的应用专用密码</label><input id="icloud-imap-password" type="password" placeholder="xxxx-xxxx-xxxx-xxxx"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group auto-width"><label data-i18n="icloud.imap_preset">收信服务商</label>
+            <select id="icloud-imap-preset" onchange="return applyIcloudHostPreset()">
+              <option value="imap.mail.me.com|993">iCloud</option>
+              <option value="imap.gmail.com|993">Gmail</option>
+              <option value="outlook.office365.com|993">Outlook</option>
+              <option value="" data-i18n="icloud.imap_other">其他…</option>
+            </select>
+          </div>
+          <div class="form-group" id="icloud-host-custom" style="display:none"><label data-i18n="icloud.imap_host">IMAP 主机</label><input id="icloud-imap-host" value="imap.mail.me.com" data-i18n-ph="icloud.imap_host_ph" placeholder="如 imap.example.com"></div>
+          <div class="form-group auto-width" id="icloud-port-custom" style="display:none"><label data-i18n="common.port">端口</label><input id="icloud-imap-port" type="number" value="993" style="width:90px"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1"><label data-i18n="icloud.cookies">Cookie（整坨粘贴即可）</label><textarea id="icloud-cookies" class="textarea" rows="4" style="font-size:var(--text-sm)" spellcheck="false" data-i18n-ph="icloud.cookies_ph" placeholder="在 icloud.com 的网络面板里右键任意请求 → 复制为 cURL，整段粘到这里。PowerShell 格式、Cookie-Editor 的 JSON、或者纯 Cookie 请求头，都能识别。"></textarea></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group auto-width"><button id="icloud-add-btn" class="btn btn-primary" onclick="return addIcloudAccount()" data-i18n="icloud.add_btn">添加</button></div>
+        </div>
+        <div style="padding:0 20px 12px"><span id="icloud-add-status" style="font-size:var(--text-base);color:var(--text3)"></span></div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-header">
+          <span class="panel-title" data-i18n="icloud.accounts">Apple ID 列表</span>
+          <div class="panel-actions">
+            <input class="search-box" id="icloud-account-search" oninput="renderIcloudAccounts()" data-i18n-ph="icloud.search_accounts" placeholder="搜索 Apple ID…" style="width:190px">
+          </div>
+        </div>
+        <table>
+          <thead><tr><th data-i18n="icloud.apple_id">Apple ID</th><th data-i18n="common.status">状态</th><th data-i18n="icloud.pool_col">地址池</th><th data-i18n="imap.last_checked">最后检测</th><th data-i18n="common.actions">操作</th></tr></thead>
+          <tbody id="icloud-account-list"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title" data-i18n="icloud.pool">地址池</span>
+          <div class="panel-actions">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:var(--text-base);color:var(--text2);user-select:none" data-i18n-title="icloud.autofill_hint" title="">
+              <input type="checkbox" id="icloud-autofill" onchange="return saveIcloudPoolSettings()">
+              <span data-i18n="icloud.autofill">自动补货</span>
+            </label>
+            <input type="number" id="icloud-pool-target" min="1" max="200" style="width:70px" onchange="return saveIcloudPoolSettings()" data-i18n-title="icloud.target_hint" title="">
+            <span id="icloud-pool-status" style="font-size:var(--text-base);color:var(--text3)"></span>
+            <select id="icloud-address-state" onchange="renderIcloudAddresses()">
+              <option value="" data-i18n="icloud.filter_all">全部状态</option>
+              <option value="free" data-i18n="icloud.filter_free">可用</option>
+              <option value="assigned" data-i18n="icloud.filter_assigned">已占用</option>
+              <option value="retired" data-i18n="icloud.filter_retired">已停用</option>
+            </select>
+            <input class="search-box" id="icloud-address-search" oninput="renderIcloudAddresses()" data-i18n-ph="icloud.search_addresses" placeholder="搜索地址…" style="width:190px">
+          </div>
+        </div>
+        <table>
+          <thead><tr><th data-i18n="icloud.address">地址</th><th data-i18n="common.status">状态</th><th data-i18n="icloud.use_count">使用</th><th data-i18n="icloud.assigned_to">占用者</th><th data-i18n="common.actions">操作</th></tr></thead>
+          <tbody id="icloud-address-list"></tbody>
         </table>
       </div>
     </div>
@@ -2626,7 +2869,7 @@ Authorization: Bearer &lt;your-api-key&gt;
 // ─── i18n ───
 const LANG = {
 zh: {
-'nav.dashboard':'仪表盘','nav.inboxes':'收件箱','nav.blocks':'封禁表','nav.services':'目标服务','nav.providers':'渠道管理','nav.outlook':'Outlook','nav.yyds':'YYDS Mail','nav.imap':'IMAP 域名邮箱','nav.templates':'自定义渠道','nav.gmail':'Gmail 别名','nav.keys':'密钥管理','nav.settings':'系统设置','nav.docs':'API 文档','nav.refresh':'刷新当前页','nav.logout':'退出登录','nav.lang':'中/EN','nav.switch_lang':'切换语言','nav.theme':'主题',
+'nav.dashboard':'仪表盘','nav.inboxes':'收件箱','nav.blocks':'封禁表','nav.services':'目标服务','nav.providers':'渠道管理','nav.outlook':'Outlook','nav.yyds':'YYDS Mail','nav.imap':'IMAP 域名邮箱','nav.icloud':'iCloud 别名','icloud.title':'iCloud 别名','icloud.accounts':'Apple ID 列表','icloud.add_account':'添加 Apple ID','icloud.apple_id':'Apple ID','icloud.region':'区域','icloud.cookies':'Cookie 请求头','icloud.imap_password':'邮箱的应用专用密码','icloud.imap_user':'收信邮箱','icloud.imap_user_ph':'隐藏邮件实际转发到的那个信箱（icloud.com → 设置 → 隐藏邮件 可查）','icloud.imap_host':'收信 IMAP 主机','icloud.imap_host_ph':'按收信邮箱自动填，可改','icloud.add_btn':'添加','icloud.free':'可用地址','icloud.assigned':'已占用','icloud.pool':'地址池','icloud.address':'地址','icloud.use_count':'使用次数','icloud.assigned_to':'占用者','icloud.last_error':'最后错误','icloud.created':'创建时间','icloud.imap_other':'其他…','icloud.autofill':'自动补货','icloud.autofill_hint':'开启后按设定间隔自动向 Apple 申请地址，把池补到目标值；撞到限流会自动退避 45 分钟。关闭则完全不碰 Apple。','icloud.target_hint':'池里要维持多少个可用地址。单次最多铸 5 个，上限 750——那是一个 Apple ID 一辈子的名额。','icloud.autofill_on':'每 {n} 分钟检查一次','icloud.autofill_off':'已关闭，只能手动生成','icloud.autofill_enabled':'已开启自动补货','icloud.autofill_disabled':'已关闭自动补货','common.back':'返回','icloud.imap_preset':'收信服务商','icloud.search_accounts':'搜索 Apple ID…','icloud.search_addresses':'搜索地址…','icloud.pool_col':'地址池','icloud.auth_srp':'SRP','icloud.auth_cookie':'Cookie','icloud.filter_all':'全部状态','icloud.filter_free':'可用','icloud.filter_assigned':'已占用','icloud.filter_retired':'已停用','icloud.state_free':'可用','icloud.state_assigned':'已占用','icloud.state_retired':'已停用','icloud.view_mail':'查看邮件','icloud.no_mail':'这个地址还没收到任何邮件。','icloud.status_active':'正常','icloud.status_degraded':'仅收信','icloud.status_error':'异常','icloud.status_active_hint':'两半都通：能生成新地址，也能收信','icloud.status_degraded_hint':'Cookie 已过期。池里现有地址照常收信，但要生成新地址得重新粘贴 Cookie','icloud.status_error_hint':'收信不可用：这个账号的地址读不到邮件','icloud.recookie':'换 Cookie','icloud.srp':'SRP 登录','icloud.srp_password_hint':'Apple ID 的账号登录密码——不是 App 专用密码。\n会以只写方式保存，并在自动续期时重用；信任令牌有效时不需要验证码。','icloud.srp_password_ph':'Apple ID 密码','icloud.srp_code_title':'输入 6 位验证码','icloud.srp_code_prompt':'Apple 已把验证码推送到你已登录的苹果设备上。','icloud.srp_no_device':'手边没有苹果设备？改用短信接收：','icloud.srp_send_sms':'发短信','icloud.srp_sms_sending':'发送中…','icloud.srp_sms_sent':'已发送，请查收短信','icloud.srp_signing_in':'正在与 Apple 握手…','icloud.srp_trusted':'信任令牌仍有效，无需验证码，已直接登录','icloud.srp_done':'SRP 登录成功，信任令牌已保存——之后续期不再需要验证码','icloud.srp_failed':'SRP 登录失败：','icloud.srp_abandoned':'已取消（验证码已发出，重新登录会再推一个）','icloud.recookie_title':'粘贴新的 Cookie','icloud.recookie_save':'保存新 Cookie','icloud.fill_cookie':'请先粘贴 Cookie','icloud.recookie_hint':'Cookie 过期后在这里换，不用删账号重建。整坨 cURL 粘进来就行。','icloud.cookie_updated':'Cookie 已更新','icloud.cookies_ph':'在 icloud.com 的网络面板里右键任意请求 → 复制为 cURL，整段粘到这里。PowerShell 格式、Cookie-Editor 的 JSON、或者纯 Cookie 请求头，都能识别。','icloud.generate':'生成地址','icloud.generating':'生成中…','icloud.generated':'已生成 {n} 个地址','icloud.gen_failed':'生成失败：','icloud.no_account':'尚未添加 Apple ID','icloud.add_first':'添加第一个','icloud.empty_pool':'地址池为空，先在上方账号行点“生成地址”','icloud.ready':'就绪','icloud.needs_setup':'待配置','icloud.adding':'添加中…','icloud.added':'已添加，点“测试”验证 Cookie 与专用密码','icloud.add_failed':'添加失败：','icloud.fill_all':'Apple ID、Cookie、App 专用密码都要填','icloud.test_ok':'两项检测均通过','icloud.forwards_to':'隐藏邮件转发到：','icloud.confirm_delete':'删除该 Apple ID 及其未占用地址？已被占用的地址会阻止删除。','icloud.retire':'停用','icloud.confirm_retire':'停用 {hme}？\n\n· Apple 会关闭这个地址的转发，之后发到它的邮件全部丢失\n· 它永远不会再被分配给任何收件箱\n· 它继续占用 Apple ID 那 750 个名额中的一个，而且再也要不回来——每个 Apple ID 一辈子只有 750 个\n\n只有在这个地址已经被目标网站拉黑、留着也没用时才该停用。此操作不可撤销。','icloud.retired':'已停用 {hme}','icloud.help':'<div style=\"margin-bottom:6px\">需要 <b>iCloud+ 订阅</b>。两样东西要准备：</div><div style=\"display:flex;gap:8px;margin-top:4px\"><span style=\"color:var(--emerald);flex:none\">1</span><span><b>Cookie</b> —— 登录 icloud.com → 按 F12 → 网络面板 → 筛选框输 <code>hme</code> → 右键任意一条请求 → 复制为 cURL → <b>整段</b>粘到下面（不用自己找 Cookie 那一行）</span></div><div style=\"display:flex;gap:8px;margin-top:4px\"><span style=\"color:var(--emerald);flex:none\">2</span><span><b>收信邮箱与应用专用密码</b> —— 隐藏邮件转发到哪个信箱，就填哪个；密码到那个邮箱服务商处生成（Gmail 在 myaccount.google.com → 安全性 → 应用专用密码，需先开两步验证）</span></div><div style=\"margin-top:8px;padding-top:6px;border-top:1px solid var(--border)\">Cookie 几小时就过期。想一劳永逸，改用账号行的 <b>SRP 登录</b>：输一次密码和验证码，之后靠信任令牌自动续期。</div>','nav.templates':'自定义渠道','nav.gmail':'Gmail 别名','nav.keys':'密钥管理','nav.settings':'系统设置','nav.docs':'API 文档','nav.refresh':'刷新当前页','nav.logout':'退出登录','nav.lang':'中/EN','nav.switch_lang':'切换语言','nav.theme':'主题',
 'theme.switched.auto':'主题: 跟随系统','theme.switched.light':'主题: 浅色','theme.switched.dark':'主题: 深色',
 'login.prompt':'请输入 API 密钥登录','login.btn':'登录',
 'dash.title':'仪表盘','dash.active_providers':'活跃渠道','dash.active_inboxes':'活跃邮箱','dash.block_rules':'封禁规则','dash.tracked_services':'追踪服务','dash.recent_inboxes':'最近邮箱','dash.recent_activity':'最近动态','dash.no_activity':'暂无动态',
@@ -2660,7 +2903,7 @@ zh: {
 // Docs - Common
 'docs.api_title':'API 文档','docs.rest_api':'REST API','docs.base_url':'Base URL:',
 // Docs - Sidebar nav groups
-'docs.overview':'概述','docs.inbox_mgmt':'邮箱管理','docs.block_mgmt':'封禁管理','docs.provider_mgmt':'渠道管理','docs.outlook_pool':'Outlook 账号池','docs.yyds_pool':'YYDS Mail 池','docs.imap_pool':'IMAP 域名邮箱','docs.key_mgmt':'密钥管理','docs.ai_integration':'AI / LLM 集成',
+'docs.overview':'概述','docs.inbox_mgmt':'邮箱管理','docs.block_mgmt':'封禁管理','docs.provider_mgmt':'渠道管理','docs.outlook_pool':'Outlook 账号池','docs.yyds_pool':'YYDS Mail 池','docs.imap_pool':'IMAP 域名邮箱','docs.icloud_pool':'iCloud 别名','docs.nav_ic_list':'Apple ID 列表','docs.nav_ic_add':'添加 Apple ID','docs.nav_ic_test':'检测两半','docs.nav_ic_cookies':'更换 Cookie','docs.nav_ic_srp':'SRP 登录','docs.nav_ic_generate':'生成地址','docs.nav_ic_addresses':'地址池','docs.nav_ic_mail':'按地址读信','docs.nav_ic_retire':'停用地址','docs.ic_intro':'隐藏邮件是转发别名，不是信箱：Apple 没有按别名读信的 API。所以这个渠道分两半——签发地址走 Apple 私有接口，收信走「转发目标信箱」的 IMAP。转发目标常常不是 Apple 信箱（Apple ID 用 gmail 注册时就得连 imap.gmail.com）。需要 iCloud+ 订阅；一个 Apple ID 一辈子 750 个地址，所以地址回收复用而不是用完即弃。','docs.ic_list_desc':'列出所有 Apple ID','docs.ic_status_note':'status 三态：active 两半都通；degraded 会话过期，池里现有地址照常收信但不能签发新的；error 收信不可用，调度会跳过。Cookie、Apple ID 密码、信任令牌、IMAP 密码一律不返回。','docs.ic_add_desc':'添加 Apple ID','docs.ic_add_note':'cookies 接受浏览器给的任何形式：复制为 cURL（任意 shell）、复制为 PowerShell、Cookie 扩展导出的 JSON、或纯 Cookie 请求头。缺 X-APPLE-WEBAUTH-TOKEN 或 X-APPLE-WEBAUTH-USER 会直接 400 并指名缺哪个，而不是存下来等以后失败。','docs.ic_test_desc':'同时检测签发与收信两半','docs.ic_test_note':'两半的错误分开返回，因为它们在不同地方修：Cookie 归 Apple 网页，IMAP 密码归收信邮箱的服务商。forwardTo 是隐藏邮件实际投递到的信箱，跟 IMAP 登录名不一致时 forwardMismatch 会直说。','docs.ic_cookies_desc':'就地更换过期 Cookie','docs.ic_cookies_note':'保留地址池。删号重建会把它持有的每一个别名一起烧掉——每个都占 750 名额中的一个。','docs.ic_srp_desc':'SRP 登录，用信任令牌取代 Cookie','docs.ic_srp_then':'随后','docs.ic_srp_note':'Cookie 几小时过期，信任令牌能撑很久，所以 6 位码是每个 Apple ID 输一次而不是每次会话输一次。Apple 认可已存的信任令牌时 needsMfa 为 false，根本不推码。会话 5 分钟过期；握手中间态在内存里，这期间重启会丢失，重新登录即可。手边没有苹果设备时用 phones + sms 走短信。','docs.ic_generate_desc':'立刻生成地址（手动补货）','docs.ic_generate_note':'常规路径是后台自动补货，这个是应急用的。Apple 拒绝时原样返回它自己的措辞——它的错误分类没有公开文档，不做臆测的归类。自动补货的开关和目标值在 iCloud 页面上，或走 PATCH /api/admin/settings 的 icloud_pool_enabled / icloud_pool_target（目标值钳到 750）。','docs.ic_addresses_desc':'地址池','docs.ic_addresses_note':'state 三态：free 在池中可领用；assigned 被某个活着的 inbox 持有；retired 已在 Apple 侧停用、永不再发，它占的名额也永久花掉了。','docs.ic_mail_desc':'按地址读信（含 /:uid 详情）','docs.ic_mail_note':'这个地址收到过的所有邮件，不像 /api/inbox/:id/messages 会隐藏比 inbox 更早的信。用来回答「这个地址到底收到过东西没有」。','docs.ic_retire_desc':'停用被烧掉的地址','docs.ic_retire_note':'在 Apple 侧关闭转发并永不再分配。有 inbox 正持有时返回 409。它占的那个名额不会还回来——750 是一个 Apple ID 一辈子的总数。','docs.key_mgmt':'密钥管理','docs.ai_integration':'AI / LLM 集成',
 // Docs - Sidebar nav links
 'docs.nav_auth':'认证方式','docs.nav_close_inbox':'关闭邮箱','docs.nav_create_inbox':'创建邮箱','docs.nav_errors':'错误处理','docs.nav_list_inboxes':'邮箱列表','docs.nav_get_messages':'获取邮件','docs.nav_get_message':'邮件详情','docs.nav_report_inbox':'上报结果','docs.nav_list_blocks':'封禁列表','docs.nav_add_block':'添加封禁','docs.nav_del_block':'删除封禁','docs.nav_list_providers':'渠道列表','docs.nav_get_provider':'渠道详情','docs.nav_patch_provider':'更新渠道','docs.nav_get_domains':'可用域名','docs.nav_ol_stats':'池统计','docs.nav_ol_import':'导入账号','docs.nav_ol_list':'账号列表','docs.nav_ol_mailbox':'账号邮箱','docs.nav_ol_delete':'删除账号','docs.nav_ol_check':'检测令牌','docs.nav_ol_renew':'续期令牌','docs.nav_yd_stats':'池统计','docs.nav_yd_import':'导入 Key','docs.nav_yd_list':'Key 列表','docs.nav_yd_delete':'删除 Key','docs.nav_yd_check':'验证 Key','docs.nav_yd_wildcard':'Wildcard 设置','docs.nav_im_stats':'池统计','docs.nav_im_list':'账号列表','docs.nav_im_list_one':'账号详情','docs.nav_im_add':'添加账号','docs.nav_im_update':'更新账号','docs.nav_im_delete':'删除账号','docs.nav_im_test':'测试连接','docs.nav_key_create':'创建密钥','docs.nav_key_list':'密钥列表','docs.nav_key_update':'更新密钥','docs.nav_key_delete':'删除密钥','docs.nav_get_code':'提取验证码','docs.nav_llms':'llms.txt',
 // Docs - Auth section
@@ -2736,7 +2979,7 @@ zh: {
 'docs.example_error':'错误描述信息','docs.example_code_excerpt':'您的验证码是...','docs.example_plain_text':'纯文本正文','docs.example_code_context':'您的验证码是 483921','docs.example_format_error':'格式错误: ...','docs.example_default_group':'未分组','docs.example_primary_key':'主力Key','docs.example_key_name':'给小明','docs.example_llms_summary':'... (完整端点文档，含参数与响应格式)','docs.example_usage_prompt':'请先读取 https://your-server.com/v1/llms.txt 了解 Mail Hub API，然后帮我写一个集成脚本。',
 },
 en: {
-'nav.dashboard':'Dashboard','nav.inboxes':'Inboxes','nav.blocks':'Blocks','nav.services':'Services','nav.providers':'Providers','nav.outlook':'Outlook','nav.yyds':'YYDS Mail','nav.imap':'IMAP Domain Mail','nav.templates':'Custom Providers','nav.gmail':'Gmail Aliases','nav.keys':'API Keys','nav.settings':'Settings','nav.docs':'API Docs','nav.refresh':'Refresh Page','nav.logout':'Logout','nav.lang':'EN/中','nav.switch_lang':'Switch Language','nav.theme':'Theme',
+'nav.dashboard':'Dashboard','nav.inboxes':'Inboxes','nav.blocks':'Blocks','nav.services':'Services','nav.providers':'Providers','nav.outlook':'Outlook','nav.yyds':'YYDS Mail','nav.imap':'IMAP Domain Mail','nav.icloud':'iCloud Aliases','icloud.title':'iCloud Aliases','icloud.accounts':'Apple IDs','icloud.add_account':'Add Apple ID','icloud.apple_id':'Apple ID','icloud.region':'Region','icloud.cookies':'Cookie header','icloud.imap_password':'Mailbox app password','icloud.imap_user':'Receiving mailbox','icloud.imap_user_ph':'Where Hide My Email actually forwards (icloud.com, Settings, Hide My Email)','icloud.imap_host':'Receiving IMAP host','icloud.imap_host_ph':'Filled from the mailbox domain; editable','icloud.add_btn':'Add','icloud.free':'Free addresses','icloud.assigned':'In use','icloud.pool':'Address pool','icloud.address':'Address','icloud.use_count':'Uses','icloud.assigned_to':'Held by','icloud.last_error':'Last error','icloud.created':'Created','icloud.imap_other':'Other…','icloud.autofill':'Auto refill','icloud.autofill_hint':'Asks Apple for addresses on a schedule until the pool reaches the target, backing off 45 minutes when rate limited. Off means Apple is not contacted at all.','icloud.target_hint':'How many free addresses to keep. At most 5 are minted per pass, and 750 is the ceiling — the lifetime cap on one Apple ID.','icloud.autofill_on':'checks every {n} min','icloud.autofill_off':'off — manual only','icloud.autofill_enabled':'Auto refill on','icloud.autofill_disabled':'Auto refill off','common.back':'Back','icloud.imap_preset':'Mail provider','icloud.search_accounts':'Search Apple IDs…','icloud.search_addresses':'Search addresses…','icloud.pool_col':'Pool','icloud.auth_srp':'SRP','icloud.auth_cookie':'Cookie','icloud.filter_all':'All states','icloud.filter_free':'Free','icloud.filter_assigned':'In use','icloud.filter_retired':'Retired','icloud.state_free':'free','icloud.state_assigned':'in use','icloud.state_retired':'retired','icloud.view_mail':'View mail','icloud.no_mail':'Nothing has arrived at this address yet.','icloud.status_active':'Ready','icloud.status_degraded':'Receive only','icloud.status_error':'Failing','icloud.status_active_hint':'Both halves work: can mint new addresses and read mail','icloud.status_degraded_hint':'Cookie expired. Addresses already in the pool still receive; minting needs a fresh cookie','icloud.status_error_hint':'Reading is broken: mail for this account cannot be read','icloud.recookie':'New cookie','icloud.srp':'SRP sign-in','icloud.srp_password_hint':'Your Apple ID account password — not an app-specific one.\nStored write-only and reused for automatic renewal; no code is needed while the trust token remains valid.','icloud.srp_password_ph':'Apple ID password','icloud.srp_code_title':'Enter the six-digit code','icloud.srp_code_prompt':'Apple pushed a code to your signed-in Apple devices.','icloud.srp_no_device':'No Apple device to hand? Get it by SMS instead:','icloud.srp_send_sms':'Send SMS','icloud.srp_sms_sending':'Sending…','icloud.srp_sms_sent':'Sent — check your messages','icloud.srp_signing_in':'Handshaking with Apple…','icloud.srp_trusted':'The stored trust token is still good — signed in with no code','icloud.srp_done':'Signed in over SRP. The trust token is saved, so renewal needs no code.','icloud.srp_failed':'SRP sign-in failed: ','icloud.srp_abandoned':'Cancelled (the code was already sent; signing in again pushes a new one)','icloud.recookie_title':'Paste a new cookie','icloud.recookie_save':'Save new cookie','icloud.fill_cookie':'Paste the cookie first','icloud.recookie_hint':'Cookies expire — replace one here instead of recreating the account. Paste the whole cURL.','icloud.cookie_updated':'Cookie updated','icloud.cookies_ph':'In the Network panel on icloud.com, right-click any request and Copy as cURL, then paste the whole thing. PowerShell format, a Cookie-Editor JSON export, or a bare Cookie header all work too.','icloud.generate':'Generate','icloud.generating':'Generating…','icloud.generated':'Generated {n} address(es)','icloud.gen_failed':'Generation failed: ','icloud.no_account':'No Apple ID added yet','icloud.add_first':'Add the first one','icloud.empty_pool':'Pool is empty — press Generate on an account row above','icloud.ready':'Ready','icloud.needs_setup':'Needs setup','icloud.adding':'Adding…','icloud.added':'Added — press Test to verify the cookie and app password','icloud.add_failed':'Add failed: ','icloud.fill_all':'Apple ID, cookie and app-specific password are all required','icloud.test_ok':'Both checks passed','icloud.forwards_to':'Hide My Email delivers to: ','icloud.confirm_delete':'Delete this Apple ID and its unused addresses? Addresses held by live inboxes will block the delete.','icloud.retire':'Retire','icloud.confirm_retire':'Retire {hme}?\n\n· Apple stops forwarding it, so anything sent there is lost\n· It is never handed to another inbox again\n· It still occupies one of the Apple ID’s 750 slots, and that slot never comes back — 750 is the lifetime total for one ID\n\nWorth doing only when a target has already blocked the address, so keeping it buys nothing. This cannot be undone.','icloud.retired':'Retired {hme}','icloud.help':'<div style=\"margin-bottom:6px\">Requires an <b>iCloud+ subscription</b>. Two things to gather:</div><div style=\"display:flex;gap:8px;margin-top:4px\"><span style=\"color:var(--emerald);flex:none\">1</span><span><b>Cookie</b> — sign in at icloud.com, press F12, open Network, filter for <code>hme</code>, right-click any request, Copy as cURL, and paste <b>the whole thing</b> below. No need to find the Cookie line yourself.</span></div><div style=\"display:flex;gap:8px;margin-top:4px\"><span style=\"color:var(--emerald);flex:none\">2</span><span><b>Receiving mailbox and app password</b> — whichever mailbox Hide My Email forwards to. Generate the password at that provider (Gmail: myaccount.google.com, Security, App passwords, which needs 2-Step Verification on first).</span></div><div style=\"margin-top:8px;padding-top:6px;border-top:1px solid var(--border)\">Cookies expire within hours. To stop replacing them, use <b>SRP sign-in</b> on the account row instead: one password and one code, then the trust token renews itself.</div>','nav.templates':'Custom Providers','nav.gmail':'Gmail Aliases','nav.keys':'API Keys','nav.settings':'Settings','nav.docs':'API Docs','nav.refresh':'Refresh Page','nav.logout':'Logout','nav.lang':'EN/中','nav.switch_lang':'Switch Language','nav.theme':'Theme',
 'theme.switched.auto':'Theme: system','theme.switched.light':'Theme: light','theme.switched.dark':'Theme: dark',
 'login.prompt':'Enter API key to login','login.btn':'Login',
 'dash.title':'Dashboard','dash.active_providers':'Active Providers','dash.active_inboxes':'Active Inboxes','dash.block_rules':'Block Rules','dash.tracked_services':'Tracked Services','dash.recent_inboxes':'Recent Inboxes','dash.recent_activity':'Recent Activity','dash.no_activity':'No activity yet',
@@ -2770,7 +3013,7 @@ en: {
 // Docs - Common
 'docs.api_title':'API Docs','docs.rest_api':'REST API','docs.base_url':'Base URL:',
 // Docs - Sidebar nav groups
-'docs.overview':'Overview','docs.inbox_mgmt':'Inbox Management','docs.block_mgmt':'Block Management','docs.provider_mgmt':'Provider Management','docs.outlook_pool':'Outlook Account Pool','docs.yyds_pool':'YYDS Mail Pool','docs.imap_pool':'IMAP Domain Mail','docs.key_mgmt':'API Key Management','docs.ai_integration':'AI / LLM Integration',
+'docs.overview':'Overview','docs.inbox_mgmt':'Inbox Management','docs.block_mgmt':'Block Management','docs.provider_mgmt':'Provider Management','docs.outlook_pool':'Outlook Account Pool','docs.yyds_pool':'YYDS Mail Pool','docs.imap_pool':'IMAP Domain Mail','docs.icloud_pool':'iCloud Aliases','docs.nav_ic_list':'List Apple IDs','docs.nav_ic_add':'Add Apple ID','docs.nav_ic_test':'Test both halves','docs.nav_ic_cookies':'Replace cookie','docs.nav_ic_srp':'SRP sign-in','docs.nav_ic_generate':'Mint addresses','docs.nav_ic_addresses':'Address pool','docs.nav_ic_mail':'Read by address','docs.nav_ic_retire':'Retire address','docs.ic_intro':'Hide My Email is a forwarding alias, not a mailbox: Apple exposes no API for reading mail sent to one. So this provider has two halves — minting goes through Apple private endpoints, reading goes through IMAP on whichever mailbox the aliases forward to. That mailbox is frequently not an Apple one; an Apple ID registered with a Gmail address needs imap.gmail.com. Requires iCloud+. An Apple ID is capped at 750 addresses for its lifetime, so addresses are recycled rather than minted per inbox.','docs.ic_list_desc':'List every Apple ID','docs.ic_status_note':'Three states: active means both halves work; degraded means the session expired — existing addresses still receive, but none can be minted; error means reading is broken and dispatch skips the account. Cookies, the Apple ID password, the trust token and the IMAP password are never returned.','docs.ic_add_desc':'Add an Apple ID','docs.ic_add_note':'cookies takes whatever the browser gave you: Copy as cURL in any shell, Copy as PowerShell, a cookie extension JSON export, or a bare Cookie header. A paste missing X-APPLE-WEBAUTH-TOKEN or X-APPLE-WEBAUTH-USER is refused with 400 naming the missing one, rather than stored to fail later.','docs.ic_test_desc':'Check the minting and reading halves together','docs.ic_test_note':'The two errors come back separately because they are fixed in different places: the cookie at icloud.com, the IMAP password at whichever provider hosts the receiving mailbox. forwardTo is where Hide My Email actually delivers, and forwardMismatch says so outright when it differs from the IMAP login.','docs.ic_cookies_desc':'Swap an expired cookie in place','docs.ic_cookies_note':'Keeps the address pool. Deleting and recreating the account would burn every alias it holds — each one occupies a slot out of 750.','docs.ic_srp_desc':'Sign in over SRP so a trust token replaces the cookie','docs.ic_srp_then':'Then','docs.ic_srp_note':'A cookie expires within hours; a trust token lasts far longer, so the six-digit code is entered once per Apple ID rather than once per session. When Apple accepts a stored trust token, needsMfa is false and no code is sent at all. Sessions expire after five minutes; the in-flight handshake lives in memory, so a restart loses it and you sign in again. With no Apple device to hand, use phones + sms.','docs.ic_generate_desc':'Mint addresses now (manual top-up)','docs.ic_generate_note':'The scheduled task is the normal path; this is for emergencies. Apple refusals come back in its own wording — its error taxonomy is undocumented, so none is invented. The auto-refill switch and target live on the iCloud page, or under PATCH /api/admin/settings as icloud_pool_enabled / icloud_pool_target (clamped at 750).','docs.ic_addresses_desc':'The address pool','docs.ic_addresses_note':'Three states: free is in the pool and claimable; assigned is held by a live inbox; retired was deactivated at Apple and is never handed out again, with its slot spent for good.','docs.ic_mail_desc':'Read an address\u2019s mail (plus /:uid detail)','docs.ic_mail_note':'Everything that ever arrived at the address, unlike /api/inbox/:id/messages which hides anything older than the inbox asking. Answers "has this address ever received anything".','docs.ic_retire_desc':'Retire a burned address','docs.ic_retire_note':'Stops forwarding at Apple and never hands it out again. Returns 409 while an inbox holds it. The slot it occupies never comes back — 750 is the lifetime total for one Apple ID.','docs.key_mgmt':'API Key Management','docs.ai_integration':'AI / LLM Integration',
 // Docs - Sidebar nav links
 'docs.nav_auth':'Authentication','docs.nav_close_inbox':'Close inbox','docs.nav_create_inbox':'Create inbox','docs.nav_errors':'Error Handling','docs.nav_list_inboxes':'List Inboxes','docs.nav_get_messages':'Get Messages','docs.nav_get_message':'Message Detail','docs.nav_report_inbox':'Report Result','docs.nav_list_blocks':'Block List','docs.nav_add_block':'Add Block','docs.nav_del_block':'Delete Block','docs.nav_list_providers':'Provider List','docs.nav_get_provider':'Provider Detail','docs.nav_patch_provider':'Update Provider','docs.nav_get_domains':'Available Domains','docs.nav_ol_stats':'Pool Stats','docs.nav_ol_import':'Import Accounts','docs.nav_ol_list':'Account List','docs.nav_ol_mailbox':'Account Mailbox','docs.nav_ol_delete':'Delete Accounts','docs.nav_ol_check':'Check Token','docs.nav_ol_renew':'Renew Token','docs.nav_yd_stats':'Pool Stats','docs.nav_yd_import':'Import Key','docs.nav_yd_list':'Key List','docs.nav_yd_delete':'Delete Key','docs.nav_yd_check':'Verify Key','docs.nav_yd_wildcard':'Wildcard Setting','docs.nav_im_stats':'Pool Stats','docs.nav_im_list':'Account List','docs.nav_im_list_one':'Account Detail','docs.nav_im_add':'Add Account','docs.nav_im_update':'Update Account','docs.nav_im_delete':'Delete Account','docs.nav_im_test':'Test Connection','docs.nav_key_create':'Create Key','docs.nav_key_list':'Key List','docs.nav_key_update':'Update Key','docs.nav_key_delete':'Delete Key','docs.nav_get_code':'Extract Code','docs.nav_llms':'llms.txt',
 // Docs - Auth section
@@ -2898,6 +3141,16 @@ const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 function getToken() { return localStorage.getItem('token') || ''; }
 
 function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+// Attribute values need quote encoding in addition to the text-node encoding
+// provided by esc(); URL-bearing attributes still require scheme validation.
+function escAttr(v) {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
 // A value interpolated into an inline handler passes through TWO decoders: the
 // HTML attribute parser, then the JS parser. esc() is not enough here — it
 // leaves quotes intact, and even an &#39; would be decoded back to ' before JS
@@ -3003,6 +3256,10 @@ function avatarColor(name) {
   return _avatarColors[Math.abs(h) % _avatarColors.length];
 }
 const ICONS = {
+  // A sign-in is a key, not a tick: 'check' means done, and using it for an
+  // action that has not happened yet reads as "already signed in".
+  key: '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
+  plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
   trash: '<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   test: '<path d="M10 2v7.31"/><path d="M14 2v7.31"/><path d="M8.5 9h7"/><path d="M14.5 9 20 20a1.5 1.5 0 0 1-1.34 2H5.34A1.5 1.5 0 0 1 4 20L9.5 9"/>',
@@ -3026,7 +3283,7 @@ function iconSvg(name) {
 }
 function iconBtn(icon, label, onclick, tone = 'blue') {
   const toneClass = tone === 'danger' ? 'btn-danger' : tone === 'amber' ? 'icon-soft-amber' : 'icon-soft-blue';
-  return `<button class="btn btn-sm btn-icon ${toneClass}" title="${esc(label)}" aria-label="${esc(label)}" onclick="${onclick}">${iconSvg(icon)}</button>`;
+  return `<button class="btn btn-sm btn-icon ${toneClass}" title="${escAttr(label)}" aria-label="${escAttr(label)}" onclick="${onclick}">${iconSvg(icon)}</button>`;
 }
 
 
@@ -3097,6 +3354,7 @@ function loadView(v) {
   else if (v === 'outlook') loadOutlook();
   else if (v === 'yyds') loadYyds();
   else if (v === 'imap') loadImap();
+  else if (v === 'icloud') loadIcloud();
   else if (v === 'templates') loadTemplates();
   else if (v === 'gmail-tool') initGmailTool();
   else if (v === 'keys') loadKeys();
@@ -3294,6 +3552,10 @@ document.getElementById('overlay').addEventListener('click', e => { if (e.target
 function confirmDialog(title, msg) {
   return new Promise(resolve => {
     const body = document.createElement('p');
+    // textContent keeps the message un-trusted; pre-line is what lets a
+    // multi-line warning read as a list instead of one run-on sentence.
+    body.style.whiteSpace = 'pre-line';
+    body.style.lineHeight = '1.8';
     body.textContent = msg;
     showDialog(title, body.outerHTML, `
       <button class="btn" data-no-loading onclick="return hideDialog()">${t('common.cancel')}</button>
@@ -3304,8 +3566,8 @@ function confirmDialog(title, msg) {
 }
 
 // ─── Activity log ───
-function addActivity(type, text) {
-  _activityLog.unshift({ type, text, time: new Date().toISOString(), safe: true });
+function addActivity(type, text, html = false) {
+  _activityLog.unshift({ type, text, time: new Date().toISOString(), html });
   if (_activityLog.length > 20) _activityLog.pop();
   renderActivity();
 }
@@ -3316,7 +3578,7 @@ function renderActivity() {
     const safeType = ['green','rose','blue','amber','emerald'].includes(a.type) ? a.type : 'blue';
     return `<div class="activity-item">
       <span class="activity-dot ad-${safeType}"></span>
-      <span>${a.safe ? a.text : esc(a.text)}</span>
+      <span>${a.html ? a.text : esc(a.text)}</span>
       <span class="activity-time">${fmtTime(a.time, 'date')}</span>
     </div>`;
   }).join('');
@@ -3435,7 +3697,7 @@ async function loadDashboard() {
       if (!sel) return;
       const first = sel.options[0].outerHTML;
       sel.innerHTML = first;
-      providers.forEach(p => { sel.innerHTML += `<option value="${esc(p.name)}">${esc(p.displayName)}</option>`; });
+      providers.forEach(p => { sel.innerHTML += `<option value="${escAttr(p.name)}">${esc(p.displayName)}</option>`; });
     });
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -3491,7 +3753,7 @@ let _allInboxes = [];
 function renderInboxTable(rows) {
   document.getElementById('inbox-list').innerHTML = rows.length ? rows.map(i => `
     <tr>
-      <td><input type="checkbox" class="inbox-check" value="${esc(i.id)}" data-status="${esc(i.status)}"></td>
+      <td><input type="checkbox" class="inbox-check" value="${escAttr(i.id)}" data-status="${escAttr(i.status)}"></td>
       <td class="mono" style="font-size:var(--text-sm)">${esc(i.address)}</td>
       <td><span class="badge badge-provider">${esc(i.provider)}</span></td>
       <td>${targetEl(i.target_service)}</td>
@@ -3547,7 +3809,7 @@ async function createInbox(prefix) {
       </div>
     `;
     toast(t('toast.inbox_created'));
-    addActivity('green', `Created inbox <span class="activity-hl">${esc(result.address)}</span>`);
+    addActivity('green', `Created inbox <span class="activity-hl">${esc(result.address)}</span>`, true);
     if (prefix === 'i-') loadInboxes(); else loadDashboard();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -3622,6 +3884,74 @@ function deferredLoading(area, text) {
     area.innerHTML = `<div class="detail-panel"><p style="color:var(--text3)">${text}</p></div>`;
   }, 150);
   return () => clearTimeout(timer);
+}
+
+/**
+ * Fold any panel and remember it.
+ *
+ * The memory is per panel id rather than one shared flag: someone who folds
+ * the iCloud form away has said nothing about the Outlook one, and reopening a
+ * panel they deliberately closed is the kind of small betrayal that makes a UI
+ * feel like it is not listening.
+ */
+function toggleFoldPanel(id) {
+  const panel = document.getElementById(id);
+  if (!panel) return false;
+  const collapsed = panel.classList.toggle('collapsed');
+  localStorage.setItem('mailhub_fold_' + id, collapsed ? '1' : '0');
+  return false;
+}
+
+/** Expanded unless this particular panel was folded before. */
+function initFoldPanel(id) {
+  const panel = document.getElementById(id);
+  if (panel && localStorage.getItem('mailhub_fold_' + id) === '1') panel.classList.add('collapsed');
+}
+
+/**
+ * Fold the whole Outlook panel row.
+ *
+ * The import panel shares a grid row with whatever the optional purchase
+ * plugin injects beside it, and a grid row is as tall as its tallest cell —
+ * so folding one alone reclaimed nothing at all. The siblings are not ours
+ * and may not carry the collapsible class, so it is added to them here; the
+ * CSS only needs a .panel-header to leave showing, which every panel has.
+ */
+function toggleOutlookPanelRow() {
+  const panel = document.getElementById('ol-import-panel');
+  const grid = document.getElementById('ol-panels-grid');
+  if (!panel || !grid) return false;
+  const collapsed = panel.classList.toggle('collapsed');
+  for (const sibling of grid.children) {
+    if (sibling === panel) continue;
+    sibling.classList.add('collapsible');
+    sibling.classList.toggle('collapsed', collapsed);
+  }
+  localStorage.setItem('mailhub_fold_ol-import-panel', collapsed ? '1' : '0');
+  return false;
+}
+
+/**
+ * Restore the row's fold state.
+ *
+ * Called after the plugin has had its chance to inject, since a sibling that
+ * arrives later would otherwise stay expanded and hold the row open on its own.
+ */
+function initOutlookPanelRow() {
+  const panel = document.getElementById('ol-import-panel');
+  const grid = document.getElementById('ol-panels-grid');
+  if (!panel || !grid) return;
+  const collapsed = localStorage.getItem('mailhub_fold_ol-import-panel') === '1';
+  panel.classList.toggle('collapsed', collapsed);
+  for (const sibling of grid.children) {
+    if (sibling === panel) continue;
+    sibling.classList.add('collapsible');
+    sibling.classList.toggle('collapsed', collapsed);
+  }
+}
+
+function toggleIcloudAddPanel() {
+  return toggleFoldPanel('icloud-add-panel');
 }
 
 function toggleCreatePanel() {
@@ -3834,7 +4164,7 @@ function renderMessage(m, btn) {
   // run) is what lets fitMsgBody read the rendered height and size the frame to
   // its content instead of leaving mail squeezed through a fixed slot.
   const bodyHtml = m.html
-    ? `<iframe srcdoc="${esc(m.html).replace(/"/g,'&quot;')}" sandbox="allow-same-origin" onload="fitMsgBody(this.closest('.msg-body'))"></iframe>`
+    ? `<iframe srcdoc="${escAttr(m.html)}" sandbox="allow-same-origin" onload="fitMsgBody(this.closest('.msg-body'))"></iframe>`
     : `<pre style="white-space:pre-wrap;font-size:var(--text-md);margin:0">${esc(m.text || t('inbox.no_content'))}</pre>`;
 
   // Only one body at a time. A sibling closes instantly rather than animating,
@@ -3913,7 +4243,7 @@ async function getCode(id, wait = false) {
       area.innerHTML = `<div class="detail-panel"><p style="color:var(--text3)">${t('inbox.no_code')}</p><button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="return getCode('${id}',true)">${t('inbox.wait_retry')}</button></div>`;
       return;
     }
-    addActivity('green', `${t('inbox.extract')}${data.codes[0].type==='link'?'link':'code'} <span class="activity-hl">${data.codes[0].type==='link'?'(link)':esc(data.codes[0].value)}</span>`);
+    addActivity('green', `${esc(t('inbox.extract') + (data.codes[0].type === 'link' ? 'link' : 'code'))} <span class="activity-hl">${esc(data.codes[0].type === 'link' ? '(link)' : data.codes[0].value)}</span>`, true);
     area.innerHTML = `
       <div class="detail-panel">
         <h3>${t('inbox.extract')}</h3>
@@ -4041,7 +4371,7 @@ async function addBlock() {
   try {
     await api('/blocks', { method: 'POST', body: JSON.stringify({ service, domain, reason: reason || undefined }) });
     toast(t('toast.block_added'));
-    addActivity('rose', `Blocked domain <span class="activity-hl">${esc(domain)}</span> @ ${esc(service)}`);
+    addActivity('rose', `Blocked domain <span class="activity-hl">${esc(domain)}</span> @ ${esc(service)}`, true);
     document.getElementById('block-service').value = '';
     document.getElementById('block-domain').value = '';
     document.getElementById('block-reason').value = '';
@@ -4088,7 +4418,7 @@ async function loadBlockRules() {
     const sel = document.getElementById('rule-provider');
     const cur = sel.value;
     sel.innerHTML = '<option value="*">'+ t('common.all') +'</option>' + (provData.providers || []).map(p =>
-      `<option value="${esc(p.name)}">${esc(p.displayName || p.name)}</option>`
+      `<option value="${escAttr(p.name)}">${esc(p.displayName || p.name)}</option>`
     ).join('');
     sel.value = cur;
     _allRules = data.rules || [];
@@ -4291,10 +4621,10 @@ async function loadProviders() {
                 <input type="checkbox" ${p.autoDispatch ? 'checked' : ''} onchange="setAutoDispatch(${jsArg(p.name)},this.checked)"> ${t('provider.auto_dispatch')}
               </label>
               <label>${t('provider.priority')}</label>
-              <input class="provider-priority-input" type="number" value="${p.priority}" onchange="setPriority(${jsArg(p.name)},this.value)">
+              <input class="provider-priority-input" type="number" value="${escAttr(p.priority)}" onchange="setPriority(${jsArg(p.name)},this.value)">
             </div>
           </div>
-          <div id="pex-${p.name}"></div>
+          <div id="pex-${escAttr(p.name)}"></div>
         </div>`;
     };
     grid.innerHTML = groups.map(group => `
@@ -4310,7 +4640,7 @@ async function toggleProvider(name, enabled) {
   try {
     await api(`/providers/${name}`, { method: 'PATCH', body: JSON.stringify({ enabled }) });
     toast(enabled ? t('provider.toggled_on', {name}) : t('provider.toggled_off', {name}));
-    addActivity(enabled ? 'blue' : 'amber', `${enabled ? t('common.enable') : t('common.disable')} <span class="activity-hl">${esc(name)}</span>`);
+    addActivity(enabled ? 'blue' : 'amber', `${esc(enabled ? t('common.enable') : t('common.disable'))} <span class="activity-hl">${esc(name)}</span>`, true);
     loadProviders();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -4474,7 +4804,7 @@ function copyLlmsUrl() {
   navigator.clipboard.writeText(url).then(() => {
     toast(t('toast.copied'));
   }).catch(() => {
-    showDialog('复制 URL', `<input value="${url}" readonly style="width:100%;user-select:all" onclick="return this.select()">`, `<button class="btn" data-no-loading onclick="return hideDialog()">${t('common.close')}</button>`);
+    showDialog('复制 URL', `<input value="${escAttr(url)}" readonly style="width:100%;user-select:all" onclick="return this.select()">`, `<button class="btn" data-no-loading onclick="return hideDialog()">${t('common.close')}</button>`);
   });
 }
 
@@ -4508,7 +4838,7 @@ function renderYdTable(rows) {
     const stClass = a.status === 'active' ? 'badge-active' : a.status === 'disabled' ? 'badge-provider' : 'badge-closed';
     const stText = a.status === 'active' ? t('yyds.status_active') : a.status === 'disabled' ? t('yyds.status_disabled') : t('yyds.status_invalid');
     return `<tr>
-      <td><input type="checkbox" class="yd-check" value="${esc(a.api_key)}"></td>
+      <td><input type="checkbox" class="yd-check" value="${escAttr(a.api_key)}"></td>
       <td><span class="mono" style="font-size:var(--text-sm);cursor:pointer;user-select:all" onclick="return navigator.clipboard.writeText(this.textContent.trim()).then(()=>toast(t('toast.copied'))" title="Click to copy">${esc(a.api_key)}</span></td>
       <td style="font-size:var(--text-base)">${esc(a.name || '-')}</td>
       <td><span class="badge ${wcClass}" style="cursor:pointer" onclick="return toggleYdWildcard(${jsArg(a.api_key)},${wcOn ? 'false' : 'true'})" title="${t('gmail.click_toggle')}">${wcLabel}</span></td>
@@ -4573,7 +4903,7 @@ async function importYyds() {
     status.textContent = t('op.imported_n', {imported: data.imported, skipped: data.skipped});
     if (data.imported > 0) {
       toast(t('op.import_success', {n: data.imported}));
-      addActivity('emerald', t('activity.imported') + ` <span class="activity-hl">${data.imported}</span> YYDS Mail`);
+      addActivity('emerald', `${esc(t('activity.imported'))} <span class="activity-hl">${esc(String(data.imported))}</span> YYDS Mail`, true);
       document.getElementById('yd-import-text').value = '';
       loadYyds();
     }
@@ -4599,7 +4929,7 @@ async function batchCheckYyds() {
   try {
     const data = await api('/yyds/check', { method: 'POST', body: JSON.stringify(body) });
     toast(t('op.verify_done', {valid: data.valid, invalid: data.invalid}));
-    addActivity('emerald', `YYDS ${t('yyds.check')}: <span class="activity-hl">${data.valid}</span> ${t('yyds.status_active')} / <span class="activity-hl">${data.invalid}</span> ${t('yyds.status_invalid')}`);
+    addActivity('emerald', `YYDS ${esc(t('yyds.check'))}: <span class="activity-hl">${esc(String(data.valid))}</span> ${esc(t('yyds.status_active'))} / <span class="activity-hl">${esc(String(data.invalid))}</span> ${esc(t('yyds.status_invalid'))}`, true);
     loadYyds();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -4640,6 +4970,469 @@ async function doBatchDeleteYd() {
 }
 
 // ─── IMAP Domain Email ───
+// 'degraded' is not a failure: the cookie expired, so no new addresses can be
+// minted, but every address already in the pool still receives and reads.
+// Painting it the same red as a dead account sends someone off fixing an outage
+// that is not happening.
+const ICLOUD_STATUS_TONE = { active: 'emerald', degraded: 'amber', error: 'rose' };
+async function loadIcloud() {
+  initFoldPanel('icloud-add-panel');
+  await loadIcloudPoolSettings();
+  await loadIcloudAccounts();
+  await loadIcloudAddresses();
+}
+
+/**
+ * The refill controls sit on this page rather than in Settings because this is
+ * where the pool they fill is visible — turning autofill off while looking at
+ * a full pool is a different decision from doing it blind two pages away.
+ */
+async function loadIcloudPoolSettings() {
+  try {
+    const { settings } = await api('/admin/settings');
+    document.getElementById('icloud-autofill').checked = settings.icloud_pool_enabled !== '0';
+    document.getElementById('icloud-pool-target').value = settings.icloud_pool_target || '10';
+    renderIcloudPoolStatus(settings);
+  } catch (e) { console.error('loadIcloudPoolSettings', e); }
+}
+
+function renderIcloudPoolStatus(settings) {
+  const el = document.getElementById('icloud-pool-status');
+  if (!el) return;
+  el.textContent = settings.icloud_pool_enabled === '0'
+    ? t('icloud.autofill_off')
+    : t('icloud.autofill_on', { n: settings.icloud_pool_interval_minutes || '15' });
+}
+
+async function saveIcloudPoolSettings() {
+  const enabled = document.getElementById('icloud-autofill').checked;
+  const target = parseInt(document.getElementById('icloud-pool-target').value, 10) || 10;
+  try {
+    const res = await api('/admin/settings', {
+      method: 'PATCH',
+      body: JSON.stringify({ settings: { icloud_pool_enabled: enabled ? '1' : '0', icloud_pool_target: String(target) } }),
+    });
+    // The server clamps the target at 750 — an Apple ID's lifetime cap — so
+    // show back what it actually stored rather than what was typed.
+    if (res.settings?.icloud_pool_target) {
+      document.getElementById('icloud-pool-target').value = res.settings.icloud_pool_target;
+    }
+    await loadIcloudPoolSettings();
+    addActivity(enabled ? 'green' : 'amber', enabled ? t('icloud.autofill_enabled') : t('icloud.autofill_disabled'));
+  } catch (e) { addActivity('rose', e.message); }
+  return false;
+}
+let _icloudAccounts = [];
+let _icloudAddresses = [];
+
+async function loadIcloudAccounts() {
+  try {
+    _icloudAccounts = (await api('/icloud/accounts')).accounts || [];
+    document.getElementById('icloud-total').textContent = _icloudAccounts.length;
+    // 'degraded' still serves the pool, so it is not "needs setup" either.
+    const usable = _icloudAccounts.filter(a => a.status === 'active' || a.status === 'degraded').length;
+    const minting = _icloudAccounts.filter(a => a.status === 'active').length;
+    document.getElementById('icloud-status').textContent =
+      minting > 0 ? t('icloud.ready') : (usable > 0 ? t('icloud.status_degraded') : t('icloud.needs_setup'));
+    renderIcloudAccounts();
+  } catch (e) { console.error('loadIcloudAccounts', e); renderLoadError('icloud-account-list', 5, e, 'return loadIcloudAccounts()'); }
+}
+
+function renderIcloudAccounts() {
+  const q = (document.getElementById('icloud-account-search')?.value || '').trim().toLowerCase();
+  const rows = _icloudAccounts.filter(a => !q || (a.apple_id || '').toLowerCase().includes(q));
+
+  if (!rows.length) {
+    renderEmpty('icloud-account-list', 5,
+      _icloudAccounts.length ? t('common.no_match') : t('icloud.no_account'),
+      _icloudAccounts.length ? '' : t('icloud.add_first'),
+      "document.getElementById('icloud-apple-id')?.focus()");
+    return;
+  }
+
+  document.getElementById('icloud-account-list').innerHTML = rows.map(a => {
+    // Counting here rather than server-side keeps the pool panel the single
+    // source of truth for what an account actually holds.
+    const mine = _icloudAddresses.filter(r => r.account_id === a.id);
+    const free = mine.filter(r => r.state === 'free').length;
+    const held = mine.filter(r => r.state === 'assigned').length;
+    const err = a.last_error
+      ? `<div class="cell-sub" style="color:var(--rose)" title="${escAttr(a.last_error)}">${esc(a.last_error.slice(0, 90))}${a.last_error.length > 90 ? '…' : ''}</div>`
+      : '';
+    return `
+      <tr>
+        <td>
+          <div>${esc(a.apple_id)}</div>
+          <div class="cell-sub">${esc(a.region)} · ${esc(a.auth_mode === 'srp' ? t('icloud.auth_srp') : t('icloud.auth_cookie'))}</div>
+        </td>
+        <td>
+          <span class="badge badge-${ICLOUD_STATUS_TONE[a.status] || 'rose'}" title="${escAttr(t('icloud.status_' + a.status + '_hint'))}">${esc(t('icloud.status_' + a.status))}</span>
+          ${err}
+        </td>
+        <td><span style="color:var(--emerald)">${free}</span> <span style="color:var(--text3)">/ ${mine.length}</span>${held ? `<div class="cell-sub">${held} ${esc(t('icloud.assigned'))}</div>` : ''}</td>
+        <td>${a.last_checked_at ? fmtTime(a.last_checked_at, 'date') : '-'}</td>
+        <td>
+          ${iconBtn('plus', t('icloud.generate'), `return generateIcloud(${jsArg(a.id)})`, 'blue')}
+          ${iconBtn('key', t('icloud.srp'), `return srpIcloudLogin(${jsArg(a.id)})`, 'blue')}
+          ${iconBtn('refresh', t('icloud.recookie'), `return refreshIcloudCookies(${jsArg(a.id)})`, 'amber')}
+          ${iconBtn('test', t('common.test'), `return testIcloudAccount(${jsArg(a.id)})`, 'blue')}
+          ${iconBtn('trash', t('common.delete'), `return deleteIcloudAccount(${jsArg(a.id)})`, 'danger')}
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+async function loadIcloudAddresses() {
+  try {
+    _icloudAddresses = (await api('/icloud/addresses')).addresses || [];
+    document.getElementById('icloud-free').textContent = _icloudAddresses.filter(r => r.state === 'free').length;
+    document.getElementById('icloud-assigned').textContent = _icloudAddresses.filter(r => r.state === 'assigned').length;
+    renderIcloudAddresses();
+    // The account rows show per-account pool counts, so they follow this data.
+    if (_icloudAccounts.length) renderIcloudAccounts();
+  } catch (e) { console.error('loadIcloudAddresses', e); renderLoadError('icloud-address-list', 5, e, 'return loadIcloudAddresses()'); }
+}
+
+function renderIcloudAddresses() {
+  const q = (document.getElementById('icloud-address-search')?.value || '').trim().toLowerCase();
+  const state = document.getElementById('icloud-address-state')?.value || '';
+  const rows = _icloudAddresses.filter(r =>
+    (!q || r.hme.toLowerCase().includes(q)) && (!state || r.state === state));
+
+  if (!rows.length) {
+    renderEmpty('icloud-address-list', 5,
+      _icloudAddresses.length ? t('common.no_match') : t('icloud.empty_pool'));
+    return;
+  }
+
+  const tone = { free: 'emerald', assigned: 'amber', retired: 'rose' };
+  document.getElementById('icloud-address-list').innerHTML = rows.map(r => `
+    <tr>
+      <td><code>${esc(r.hme)}</code>${r.created_at ? `<div class="cell-sub">${esc(fmtTime(r.created_at, 'date'))}</div>` : ''}</td>
+      <td><span class="badge badge-${tone[r.state] || 'rose'}">${esc(t('icloud.state_' + r.state) || r.state)}</span></td>
+      <td>${r.use_count}</td>
+      <td>${r.assigned_inbox_id ? `<code>${esc(r.assigned_inbox_id)}</code>` : '<span style="color:var(--text3)">-</span>'}</td>
+      <td>
+        ${iconBtn('inbox', t('icloud.view_mail'), `return viewIcloudMailbox(${jsArg(r.hme)})`, 'blue')}
+        ${r.state === 'retired' ? '' : iconBtn('trash', t('icloud.retire'), `return retireIcloudAddress(${jsArg(r.hme)})`, 'danger')}
+      </td>
+    </tr>`).join('');
+}
+
+/**
+ * Open an address's mail in the inbox detail view.
+ *
+ * The same view Outlook's account mailbox uses, for the same reason: this
+ * answers "what has ever arrived at this address", which the tenant-facing
+ * inbox view deliberately cannot — it hides everything older than the inbox
+ * asking. Reusing the view means the message list, the reader and the pager all
+ * behave identically to every other mailbox in the app.
+ */
+async function viewIcloudMailbox(hme) {
+  // Switch to the inboxes view the same way the nav does, so the sidebar's
+  // active state follows and does not keep pointing at the iCloud page.
+  document.querySelectorAll('.nav-icon').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelector('.nav-icon[data-view="inboxes"]')?.classList.add('active');
+  document.getElementById('v-inboxes').classList.add('active');
+
+  const area = document.getElementById('inbox-detail-area');
+  await enterInboxDetail();
+  await fadeOutDetail(area);
+  const stopLoading = deferredLoading(area, t('common.loading') || 'Loading...');
+  try {
+    const data = await api('/icloud/addresses/' + encodeURIComponent(hme) + '/messages');
+    stopLoading();
+    const msgs = data.messages || [];
+
+    const header = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">' +
+      '<span class="mono" style="font-size:var(--text-md);font-weight:var(--fw-semibold)">' + esc(hme) + '</span>' +
+      '<span class="badge badge-provider">icloud</span>' +
+      '</div>';
+    const refresh = iconBtn('refresh', t('nav.refresh'), 'return viewIcloudMailbox(' + jsArg(hme) + ')', 'blue');
+
+    if (!msgs.length) {
+      area.innerHTML = '<div class="detail-panel">' + header +
+        '<p style="color:var(--text3)">' + esc(t('icloud.no_mail')) + '</p>' +
+        '<div style="margin-top:8px">' + refresh + '</div></div>';
+      return;
+    }
+
+    area.innerHTML = '<div class="detail-panel">' + header +
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">' +
+        '<h3>' + t('inbox.messages_title', { n: msgs.length }) + '</h3>' + refresh +
+      '</div>' +
+      '<div class="panel" style="margin-bottom:0"><table>' + msgTableHead() + '<tbody>' +
+        // Newest first, matching every other mailbox in the app.
+        msgs.slice().reverse().map(m =>
+          msgRow(m, 'return readIcloudMessage(' + jsArg(hme) + ',' + jsArg(m.id) + ',this)')).join('') +
+      '</tbody></table></div></div>';
+  } catch (e) { stopLoading(); toast(e.message, 'error'); }
+}
+
+async function readIcloudMessage(hme, uid, btn) {
+  if (collapseOwnMessage(btn)) return;
+  try {
+    const data = await api('/icloud/addresses/' + encodeURIComponent(hme) + '/messages/' + encodeURIComponent(uid));
+    renderMessage(data.message, btn);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/**
+ * Fill host and port from the chosen provider, and only show the raw fields
+ * when none of them fits. Typing a hostname is a step nobody should need for
+ * the two providers Hide My Email actually forwards to in practice.
+ */
+function applyIcloudHostPreset() {
+  const preset = document.getElementById('icloud-imap-preset').value;
+  const custom = !preset;
+  document.getElementById('icloud-host-custom').style.display = custom ? '' : 'none';
+  document.getElementById('icloud-port-custom').style.display = custom ? '' : 'none';
+  if (!custom) {
+    const [host, port] = preset.split('|');
+    document.getElementById('icloud-imap-host').value = host;
+    document.getElementById('icloud-imap-port').value = port;
+  }
+  return false;
+}
+
+/** Point the preset at whatever provider the receiving mailbox belongs to. */
+function suggestIcloudImapHost() {
+  const user = document.getElementById('icloud-imap-user').value.trim().toLowerCase();
+  const domain = user.split('@')[1];
+  if (!domain || !IMAP_HOSTS[domain]) return;
+  const select = document.getElementById('icloud-imap-preset');
+  const wanted = [...select.options].find(o => o.value.startsWith(IMAP_HOSTS[domain] + '|'));
+  if (wanted && select.value !== wanted.value) {
+    select.value = wanted.value;
+    applyIcloudHostPreset();
+  }
+}
+
+async function addIcloudAccount() {
+  const status = document.getElementById('icloud-add-status');
+  if (icloudCookieTarget) {
+    const blob = document.getElementById('icloud-cookies').value.trim();
+    if (!blob) { status.textContent = t('icloud.fill_cookie'); status.style.color = 'var(--rose)'; return; }
+    try {
+      const r = await api('/icloud/accounts/' + icloudCookieTarget + '/cookies', { method: 'POST', body: JSON.stringify({ cookies: blob }) });
+      status.textContent = t('icloud.cookie_updated') + ' (' + (r.found || []).length + ')';
+      status.style.color = 'var(--emerald)';
+      document.getElementById('icloud-cookies').value = '';
+      cancelIcloudCookieTarget();
+    } catch (e) { status.textContent = e.message; status.style.color = 'var(--rose)'; }
+    loadIcloud();
+    return;
+  }
+  const body = {
+    appleId: document.getElementById('icloud-apple-id').value.trim(),
+    region: document.getElementById('icloud-region').value,
+    cookies: document.getElementById('icloud-cookies').value.trim(),
+    imapUser: document.getElementById('icloud-imap-user').value.trim() || undefined,
+    imapHost: document.getElementById('icloud-imap-host').value.trim() || undefined,
+    imapPort: parseInt(document.getElementById('icloud-imap-port').value) || 993,
+    imapPassword: document.getElementById('icloud-imap-password').value,
+  };
+  // The app-specific password is not optional in practice: without it the
+  // addresses can be minted but never read, which looks like a broken provider.
+  if (!body.appleId || !body.cookies || !body.imapPassword) {
+    status.textContent = t('icloud.fill_all'); status.style.color = 'var(--rose)'; return;
+  }
+  status.textContent = t('icloud.adding'); status.style.color = 'var(--text3)';
+  try {
+    await api('/icloud/accounts', { method: 'POST', body: JSON.stringify(body) });
+    status.textContent = t('icloud.added'); status.style.color = 'var(--emerald)';
+    document.getElementById('icloud-cookies').value = '';
+    document.getElementById('icloud-imap-password').value = '';
+    loadIcloud();
+  } catch (e) {
+    status.textContent = t('icloud.add_failed') + e.message; status.style.color = 'var(--rose)';
+  }
+}
+async function testIcloudAccount(id) {
+  try {
+    const data = await api('/icloud/accounts/' + id + '/test', { method: 'POST' });
+    if (data.forwardTo) addActivity('blue', t('icloud.forwards_to') + data.forwardTo);
+    if (data.ok) addActivity('green', t('icloud.test_ok'));
+    // Report each half separately: the cookie and the app password fail for
+    // completely different reasons; the forwarding destination is independent.
+    else addActivity('rose', [data.hmeError, data.imapError].filter(Boolean).join(' | '));
+    if (data.forwardMismatch) addActivity('amber', data.forwardMismatch);
+  } catch (e) { addActivity('rose', e.message); }
+  loadIcloudAccounts();
+}
+async function generateIcloud(id) {
+  const status = document.getElementById('icloud-add-status');
+  status.textContent = t('icloud.generating'); status.style.color = 'var(--text3)';
+  try {
+    const data = await api('/icloud/accounts/' + id + '/generate', { method: 'POST', body: JSON.stringify({ count: 1 }) });
+    if (data.created > 0) {
+      status.textContent = t('icloud.generated', { n: data.created }) + (data.addresses || []).join(', ');
+      status.style.color = 'var(--emerald)';
+    } else {
+      status.textContent = t('icloud.gen_failed') + (data.error || '');
+      status.style.color = 'var(--rose)';
+    }
+  } catch (e) {
+    status.textContent = t('icloud.gen_failed') + e.message; status.style.color = 'var(--rose)';
+  }
+  loadIcloud();
+}
+// Which account a paste is meant to update, or null to create a new one.
+// Reuses the big textarea above rather than a native prompt, because the whole
+// point is that the paste is a 4KB cURL command.
+let icloudCookieTarget = null;
+/**
+ * Sign in over SRP instead of pasting a cookie.
+ *
+ * A cookie dies within hours; a trust token survives weeks, so the six-digit
+ * code is asked for once per Apple ID rather than once per session. The whole
+ * exchange runs in one dialog because it is one conversation with Apple — and
+ * because a native prompt() cannot show the phone numbers Apple offers, which
+ * is the only route open to someone with no Apple hardware to hand.
+ */
+async function srpIcloudLogin(id) {
+  const status = document.getElementById('icloud-add-status');
+  const say = (msg, tone) => { status.textContent = msg; status.style.color = 'var(--' + tone + ')'; };
+
+  const password = await srpAskPassword();
+  if (!password) return;
+
+  say(t('icloud.srp_signing_in'), 'text3');
+  let begun;
+  try {
+    begun = await api('/icloud/accounts/' + id + '/srp/begin', {
+      method: 'POST', body: JSON.stringify({ password }),
+    });
+  } catch (e) { say(t('icloud.srp_failed') + e.message, 'rose'); return; }
+
+  if (!begun.needsMfa) {
+    // Apple accepted the stored trust token and sent no code at all. That
+    // silent path is the steady state this mechanism exists to reach, so it is
+    // worth saying out loud rather than looking like nothing happened.
+    say(t('icloud.srp_trusted'), 'emerald');
+    loadIcloud();
+    return;
+  }
+
+  let phones = [];
+  try {
+    phones = (await api('/icloud/srp/' + begun.sessionId + '/phones')).phones || [];
+  } catch { /* the device push still works without the list */ }
+
+  const code = await srpAskCode(begun.sessionId, phones);
+  if (!code) { say(t('icloud.srp_abandoned'), 'rose'); return; }
+
+  try {
+    const done = await api('/icloud/accounts/' + id + '/srp/complete', {
+      method: 'POST', body: JSON.stringify({ sessionId: begun.sessionId, code }),
+    });
+    say(done.ok ? t('icloud.srp_done') : t('icloud.srp_failed') + (done.error || ''), done.ok ? 'emerald' : 'rose');
+  } catch (e) { say(t('icloud.srp_failed') + e.message, 'rose'); }
+  loadIcloud();
+}
+
+function srpAskPassword() {
+  return new Promise(resolve => {
+    const html =
+      '<p style="color:var(--text2);line-height:1.8;margin-bottom:14px;white-space:pre-line">' + esc(t('icloud.srp_password_hint')) + '</p>' +
+      '<input id="srp-pw" type="password" style="width:100%" placeholder="' + escAttr(t('icloud.srp_password_ph')) + '" ' +
+      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'srp-go\').click()}">';
+    const actions =
+      '<button class="btn" data-no-loading onclick="return _srpR(null),hideDialog()">' + t('common.cancel') + '</button>' +
+      '<button id="srp-go" class="btn btn-primary" onclick="return _srpR(document.getElementById(\'srp-pw\').value),hideDialog()">' + t('common.confirm') + '</button>';
+    showDialog(t('icloud.srp'), html, actions);
+    window._srpR = resolve;
+    setTimeout(() => document.getElementById('srp-pw')?.focus(), 50);
+  });
+}
+
+function srpAskCode(sessionId, phones) {
+  return new Promise(resolve => {
+    // Apple masks the digits itself, so the numbers it hands back are safe to
+    // print. Without this list, an account with no Apple device to hand is
+    // simply stuck on a code that is pushed somewhere unreachable.
+    const options = phones.map(ph =>
+      '<option value="' + escAttr(ph.id) + '">' + esc(ph.numberWithDialCode || ('#' + ph.id)) + '</option>').join('');
+    const smsRow = phones.length
+      ? '<div style="margin:14px 0;padding-top:12px;border-top:1px solid var(--border)">' +
+          '<div style="color:var(--text3);font-size:var(--text-base);margin-bottom:8px">' + esc(t('icloud.srp_no_device')) + '</div>' +
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+            '<select id="srp-phone">' + options + '</select>' +
+            '<button class="btn btn-sm" data-no-loading onclick="return srpSendSms(' + jsArg(sessionId) + ')">' + esc(t('icloud.srp_send_sms')) + '</button>' +
+            '<span id="srp-sms-status" style="font-size:var(--text-base);color:var(--text3)"></span>' +
+          '</div>' +
+        '</div>'
+      : '';
+
+    const html =
+      '<p style="color:var(--text2);line-height:1.7">' + esc(t('icloud.srp_code_prompt')) + '</p>' +
+      smsRow +
+      '<input id="srp-code" inputmode="numeric" maxlength="6" style="width:100%;margin-top:12px;letter-spacing:4px;font-family:var(--font-mono)" placeholder="000000" ' +
+      'onkeydown="if(event.key===\'Enter\'){event.preventDefault();document.getElementById(\'srp-ok\').click()}">';
+    const actions =
+      '<button class="btn" data-no-loading onclick="return _srpR(null),hideDialog()">' + t('common.cancel') + '</button>' +
+      '<button id="srp-ok" class="btn btn-primary" onclick="return _srpR(document.getElementById(\'srp-code\').value.trim()),hideDialog()">' + t('common.confirm') + '</button>';
+
+    showDialog(t('icloud.srp_code_title'), html, actions);
+    window._srpR = resolve;
+    setTimeout(() => document.getElementById('srp-code')?.focus(), 50);
+  });
+}
+
+async function srpSendSms(sessionId) {
+  const el = document.getElementById('srp-sms-status');
+  const phoneId = parseInt(document.getElementById('srp-phone').value, 10);
+  el.textContent = t('icloud.srp_sms_sending');
+  el.style.color = 'var(--text3)';
+  try {
+    await api('/icloud/srp/' + sessionId + '/sms', { method: 'POST', body: JSON.stringify({ phoneId }) });
+    el.textContent = t('icloud.srp_sms_sent');
+    el.style.color = 'var(--emerald)';
+    document.getElementById('srp-code')?.focus();
+  } catch (e) {
+    el.textContent = e.message;
+    el.style.color = 'var(--rose)';
+  }
+  return false;
+}
+function refreshIcloudCookies(id) {
+  icloudCookieTarget = id;
+  const box = document.getElementById('icloud-cookies');
+  const status = document.getElementById('icloud-add-status');
+  document.getElementById('icloud-add-btn').textContent = t('icloud.recookie_save');
+  status.textContent = t('icloud.recookie_hint');
+  status.style.color = 'var(--text3)';
+  box.value = '';
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  box.focus();
+}
+function cancelIcloudCookieTarget() {
+  icloudCookieTarget = null;
+  document.getElementById('icloud-add-btn').textContent = t('icloud.add_btn');
+}
+/**
+ * Retire a burned address: Apple stops forwarding it and it never returns to
+ * the pool. The slot it occupies is spent either way once a target has blocked
+ * the address, which is why this exists at all — but it is spent for good, so
+ * the confirmation spells that out rather than saying "are you sure".
+ */
+async function retireIcloudAddress(hme) {
+  if (!await confirmDialog(t('icloud.retire'), t('icloud.confirm_retire', { hme }))) return;
+  try {
+    await api('/icloud/addresses/' + encodeURIComponent(hme) + '/retire', { method: 'POST' });
+    addActivity('rose', t('icloud.retired', { hme }));
+  } catch (e) { addActivity('rose', e.message); }
+  loadIcloud();
+}
+
+async function deleteIcloudAccount(id) {
+  if (!await confirmDialog(t('common.delete'), t('icloud.confirm_delete'))) return;
+  try {
+    await api('/icloud/accounts/' + id, { method: 'DELETE' });
+  } catch (e) { addActivity('rose', e.message); }
+  loadIcloud();
+}
 async function loadImap() {
   try {
     const s = await api('/imap/stats');
@@ -4659,7 +5452,7 @@ async function loadImapAccounts() {
     const tbody = document.getElementById('imap-account-list');
     tbody.innerHTML = (data.accounts || []).map(a => `
       <tr>
-        <td><input type="checkbox" class="imap-check" value="${esc(a.id)}"></td>
+        <td><input type="checkbox" class="imap-check" value="${escAttr(a.id)}"></td>
         <td>${esc(a.host)}</td>
         <td>${a.port}</td>
         <td>${esc(a.user)}</td>
@@ -4731,6 +5524,8 @@ function toggleAllImap(checked) {
 
 // ─── Outlook ───
 async function loadOutlook() {
+  initOutlookPanelRow();
+  initFoldPanel('ol-oauth-panel');
   await Promise.all([loadOutlookStats(), loadOutlookAccounts(), loadOlSettings()]);
 }
 
@@ -4804,7 +5599,7 @@ function renderOlTable(rows) {
       ? iconBtn('copy', t('outlook.copy_password'), `return copyOutlookOauthPassword(${jsArg(a.email)})`, 'amber')
       : '';
     return `<tr>
-      <td><input type="checkbox" class="ol-check" value="${esc(a.email)}"></td>
+      <td><input type="checkbox" class="ol-check" value="${escAttr(a.email)}"></td>
       <td class="mono" style="font-size:var(--text-sm)">${esc(a.email)}</td>
       <td><span class="badge ${typeClass}">${typeLabel}</span></td>
       <td><span class="badge ${tsClass}">${tsText}</span></td>
@@ -5058,7 +5853,7 @@ async function importOutlook() {
     status.textContent = t('op.imported_n', {imported: data.imported, skipped: data.skipped});
     if (data.imported > 0) {
       toast(t('op.import_success', {n: data.imported}));
-      addActivity('blue', t('activity.imported') + ` <span class="activity-hl">${data.imported}</span> Outlook`);
+      addActivity('blue', `${esc(t('activity.imported'))} <span class="activity-hl">${esc(String(data.imported))}</span> Outlook`, true);
       document.getElementById('ol-import-text').value = '';
       loadOutlook();
     }
@@ -5094,7 +5889,7 @@ async function batchCheckOutlook() {
   try {
     const data = await api('/outlook/check', { method: 'POST', body: JSON.stringify(body) });
     toast(t('op.check_done', {valid: data.valid, invalid: data.invalid}));
-    addActivity('blue', `Outlook ${t('outlook.check')}: <span class="activity-hl">${data.valid}</span> ${t('outlook.status_valid')} / <span class="activity-hl">${data.invalid}</span> ${t('outlook.status_invalid')}`);
+    addActivity('blue', `Outlook ${esc(t('outlook.check'))}: <span class="activity-hl">${esc(String(data.valid))}</span> ${esc(t('outlook.status_valid'))} / <span class="activity-hl">${esc(String(data.invalid))}</span> ${esc(t('outlook.status_invalid'))}`, true);
     loadOutlook();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -5107,7 +5902,7 @@ async function batchRenewOutlook() {
   try {
     const data = await api('/outlook/renew', { method: 'POST', body: JSON.stringify(body) });
     toast(t('op.renew_done', {renewed: data.renewed, failed: data.failed}));
-    addActivity('blue', `Outlook ${t('outlook.renew')}: <span class="activity-hl">${data.renewed}</span> OK`);
+    addActivity('blue', `Outlook ${esc(t('outlook.renew'))}: <span class="activity-hl">${esc(String(data.renewed))}</span> OK`, true);
     loadOutlook();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -5143,7 +5938,7 @@ async function doBatchDeleteOl() {
   try {
     const data = await api('/outlook/accounts', { method: 'DELETE', body: JSON.stringify({ emails }) });
     toast(t('op.deleted_n', {n: data.deleted}));
-    addActivity('amber', `${t('common.delete')} <span class="activity-hl">${data.deleted}</span> Outlook`);
+    addActivity('amber', `${esc(t('common.delete'))} <span class="activity-hl">${esc(String(data.deleted))}</span> Outlook`, true);
     loadOutlook();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -5240,7 +6035,7 @@ function renderKeyTable(rows) {
         </div>
       </td>
       <td style="text-align:center">${k.callCount}</td>
-      <td><div style="display:flex;align-items:center;justify-content:center;gap:4px"><input type="number" min="0" placeholder="${t('provider.no_limit')}" value="${k.dailyLimit ?? ''}" style="width:80px;text-align:center" onchange="setKeyQuota(${jsArg(k.keyHash)},this.value)">${k.dailyLimit != null ? `<span style="font-size:var(--text-xs);color:var(--text3);white-space:nowrap">${k.dailyCalls}/${k.dailyLimit}</span>` : ''}</div></td>
+      <td><div style="display:flex;align-items:center;justify-content:center;gap:4px"><input type="number" min="0" placeholder="${t('provider.no_limit')}" value="${escAttr(k.dailyLimit ?? '')}" style="width:80px;text-align:center" onchange="setKeyQuota(${jsArg(k.keyHash)},this.value)">${k.dailyLimit != null ? `<span style="font-size:var(--text-xs);color:var(--text3);white-space:nowrap">${k.dailyCalls}/${k.dailyLimit}</span>` : ''}</div></td>
       <td class="time">${k.lastUsedAt ? fmtTime(k.lastUsedAt, 'date') : t('common.never')}</td>
       <td>
         <label class="toggle">
@@ -5269,7 +6064,7 @@ async function createKey() {
   try {
     const data = await api('/keys', { method: 'POST', body: JSON.stringify({ name }) });
     toast(t('toast.key_created'));
-    addActivity('blue', `${t('op.key_created')} <span class="activity-hl">${esc(name)}</span>`);
+    addActivity('blue', `${esc(t('op.key_created'))} <span class="activity-hl">${esc(name)}</span>`, true);
     document.getElementById('key-name').value = '';
     loadKeys();
   } catch (e) { toast(e.message, 'error'); }
@@ -5774,6 +6569,9 @@ function placeOutlookOauthPanel() {
     grid.appendChild(panel);
     panel.style.marginBottom = '0';
   }
+  // The plugin panel only exists now, so the row's stored fold state has to be
+  // applied again — otherwise a newcomer holds open a row the operator folded.
+  if (typeof initOutlookPanelRow === 'function') initOutlookPanelRow();
 }
 </script>
 </body>

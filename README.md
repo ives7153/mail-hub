@@ -13,7 +13,7 @@
 - **智能调度** — 按信任度、限速、封禁域名自动选最优渠道
 - **自定义渠道** — Web UI 添加 REST / GraphQL 邮件渠道，无需写代码
 - **验证码提取** — 自动识别数字、字母数字、链接型验证码
-- **账号池管理** — Outlook / YYDS Mail / IMAP 域名邮箱批量管理
+- **账号池管理** — Outlook / YYDS Mail / IMAP 域名邮箱 / iCloud 别名批量管理
 - **权限控制** — API Key 分级（管理员 / 普通用户 + 配额限制）
 - **Gmail 别名生成器** — dot-trick / +后缀 / googlemail.com 等价域
 - **中文 Web 面板** — 仪表盘、渠道管理、封禁表、系统设置
@@ -106,6 +106,7 @@ pm2 start ecosystem.config.cjs
 | Outlook | 账号池 | 导入 Outlook 账号，支持裸账号授权补全；1:1 分配，关闭后回池；可选 `+` 子地址别名；账号页可查看整个邮箱并按租期分段 |
 | YYDS Mail | API Key 池 | 导入 Key，按 key 轮转，单 Key 每日 20,000 次调用 |
 | IMAP 域名邮箱 | 账号池 | 连接自有域名邮箱（catch-all），一个邮箱支撑多个收件箱；生成人名形态地址，信任度最高 |
+| iCloud 别名 | 地址池 | 用 iCloud+ 的隐藏邮件地址签发 `@icloud.com` 地址，转发到你自己的信箱后按收件人分拣；地址回收复用，后台按 Apple 的限速自动补货 |
 
 ## 自定义渠道
 
@@ -146,6 +147,13 @@ curl -X POST http://localhost:3100/api/inbox \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{"for": "twitter.com", "alias": true}'
+
+# 多个 Apple ID 时指定用哪个签发地址（仅 iCloud 渠道）
+# 不传则从所有可用账号里挑用得最少的那个地址
+curl -X POST http://localhost:3100/api/inbox \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"for": "twitter.com", "provider": "icloud", "account": "me@icloud.com"}'
 
 # 获取邮件
 curl http://localhost:3100/api/inbox/{id}/messages \

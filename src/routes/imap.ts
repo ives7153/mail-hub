@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { buildSetClause, getDb, getRow, logActivity } from '../db.js';
 import type { AdminEnv } from './admin.js';
 import { testImapConnection } from '../providers/imap.js';
+import { evictClient } from '../providers/imap-core.js';
 import { randomUUID } from 'crypto';
 
 interface ImapAccountRow {
@@ -76,6 +77,7 @@ imapRoutes.put('/imap/accounts/:id', async (c) => {
   if (!clause) return c.json({ error: 'No fields to update' }, 400);
   const params = [...clause.params, c.req.param('id')];
   db.prepare(`UPDATE imap_accounts SET ${clause.setClause} WHERE id = ?`).run(...params);
+  evictClient(`imap:${c.req.param('id')}`);
   logActivity('blue', `Updated IMAP account ${c.req.param('id')}`);
 
   return c.json({ ok: true });
@@ -87,6 +89,7 @@ imapRoutes.delete('/imap/accounts/:id', (c) => {
   if (!existing) return c.json({ error: 'Account not found' }, 404);
 
   db.prepare(`DELETE FROM imap_accounts WHERE id = ?`).run(c.req.param('id'));
+  evictClient(`imap:${c.req.param('id')}`);
   logActivity('rose', `Removed IMAP account ${c.req.param('id')}`);
   return c.json({ ok: true });
 });

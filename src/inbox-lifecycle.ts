@@ -1,5 +1,5 @@
 import { registry } from './providers/registry.js';
-import type { InboxData } from './providers/base.js';
+import { PROVIDER, type InboxData } from './providers/base.js';
 import { createLogger } from './logger.js';
 import { logIgnoredError } from './errors.js';
 
@@ -28,27 +28,69 @@ export function parseInboxTimestamp(value: string | null | undefined): number {
 }
 
 /**
+ * SQLite datetime() records only the containing second, not the creation
+ * instant within it. The first timestamp that is certainly not older than the
+ * inbox is therefore the start of the following second.
+ */
+export function parseInboxStartTimestamp(value: string | null | undefined): number {
+  const timestamp = parseInboxTimestamp(value);
+  return timestamp ? timestamp + 1000 : 0;
+}
+
+/**
  * Pool providers reuse mailboxes that already hold the previous tenant's mail
  * (Outlook accounts are recycled, YYDS keys and IMAP catch-alls are shared), so
  * the inbox's own creation time is the only boundary between "mine" and
- * "history". The 60s slack absorbs clock skew between us and the mail host.
+ * "history". The lower bound is strict: even a one-second overlap can expose
+ * a previous tenant's message during a physical-mailbox handoff.
  *
- * Messages with a missing or unparseable timestamp are KEPT: dropping them
- * would silently lose real mail from providers with sloppy date fields, and a
- * visible stray beats a swallowed verification code.
+ * Open leases keep missing or unparseable timestamps: dropping them would
+ * silently lose real mail from providers with sloppy date fields. Once a lease
+ * has ended, the same uncertainty fails closed so historical mail cannot cross
+ * the durable tenant boundary.
  */
-export function isMessageWithinInboxLifetime(receivedAt: string | undefined, inboxCreatedAtMs: number): boolean {
-  if (!inboxCreatedAtMs) return true;
-  if (!receivedAt) return true;
-  const received = Date.parse(receivedAt);
-  if (!Number.isFinite(received)) return true;
-  return received >= inboxCreatedAtMs - 60000;
+export interface InboxMessageWindow {
+  created_at?: string | null;
+  closed_at?: string | null;
+  expires_at?: string | null;
+  status?: string | null;
 }
 
-export function rowToInboxData(row: { address: string; auth_data: string; provider: string; api_base: string | null }): InboxData {
+export function isMessageWithinInboxLifetime(
+  receivedAt: string | undefined,
+  inbox: number | InboxMessageWindow,
+): boolean {
+  if (typeof inbox === 'number') {
+    if (!inbox) return true;
+    if (!receivedAt) return true;
+    const received = Date.parse(receivedAt);
+    if (!Number.isFinite(received)) return true;
+    return received >= inbox;
+  }
+
+  const start = parseInboxStartTimestamp(inbox.created_at);
+  const validEnds = [parseInboxTimestamp(inbox.closed_at), parseInboxTimestamp(inbox.expires_at)].filter((value) => value > 0);
+  const end = validEnds.length > 0 ? Math.min(...validEnds) : undefined;
+  const ended = inbox.status === 'closed' || (end !== undefined && end <= Date.now());
+  if (inbox.status === 'closed' && end === undefined) return false;
+  if (!receivedAt) return !ended;
+  const received = Date.parse(receivedAt);
+  if (!Number.isFinite(received)) return !ended;
+  const lower = start || undefined;
+  if (lower !== undefined && received < lower) return false;
+  return end === undefined || received < end;
+}
+
+export function rowToInboxData(row: { id: string; address: string; auth_data: string; provider: string; api_base: string | null }): InboxData {
+  const storedAuthData = JSON.parse(row.auth_data) as Record<string, string>;
   return {
     address: row.address,
-    authData: JSON.parse(row.auth_data),
+    // YYDS refreshes its per-inbox token by row id; the same address can live on
+    // several rows (current + closed history), so the id must ride along in
+    // authData or the refresh would match by address and clobber siblings.
+    authData: row.provider === PROVIDER.YYDS
+      ? { ...storedAuthData, inboxId: row.id }
+      : storedAuthData,
     provider: row.provider,
     apiBase: row.api_base || '',
   };

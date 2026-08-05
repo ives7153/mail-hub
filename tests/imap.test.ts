@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getDb } from '../src/db.js';
-import { ImapProvider, selectBodyParts, decodeBody, generateUniqueUsername } from '../src/providers/imap.js';
+import { ImapProvider, generateUniqueUsername } from '../src/providers/imap.js';
+import { selectBodyParts, decodeBody, describeImapError } from '../src/providers/imap-core.js';
 import { randomUsername } from '../src/username-generator.js';
 import type { InboxData } from '../src/providers/base.js';
 
@@ -8,10 +9,15 @@ const imapMockState = vi.hoisted(() => ({
   connectCount: 0,
   searchResult: [] as number[],
   fetchRanges: [] as number[][],
+  // Recipients the fake reports on every fetched message. Defaults to
+  // undefined, which the provider must treat as "cannot verify, keep".
+  envelopeTo: undefined as { address: string }[] | undefined,
   // getMessage fixtures
   bodyStructure: undefined as unknown,
   partContents: {} as Record<string, { content: Buffer; charset?: string }>,
   downloadCalls: [] as string[],
+  envelopeDate: '2020-01-01T00:00:00.000Z',
+  internalDate: '2026-07-26T21:03:47.000Z',
 }));
 
 vi.mock('imapflow', () => {
@@ -27,10 +33,19 @@ vi.mock('imapflow', () => {
     async search(): Promise<number[]> {
       return [...imapMockState.searchResult];
     }
-    async *fetch(range: number[]): AsyncGenerator<{ uid: number; envelope: { from: { address: string }[]; subject: string; date: Date } }> {
+    async *fetch(range: number[]): AsyncGenerator<{ uid: number; internalDate: Date; envelope: { from: { address: string }[]; to?: { address: string }[]; subject: string; date: Date } }> {
       imapMockState.fetchRanges.push(range);
       for (const uid of range) {
-        yield { uid, envelope: { from: [{ address: 'sender@example.test' }], subject: `mail-${uid}`, date: new Date() } };
+        yield {
+          uid,
+          internalDate: new Date(imapMockState.internalDate),
+          envelope: {
+            from: [{ address: 'sender@example.test' }],
+            to: imapMockState.envelopeTo,
+            subject: `mail-${uid}`,
+            date: new Date(imapMockState.envelopeDate),
+          },
+        };
       }
     }
     async fetchOne(_id: string, query: Record<string, unknown>): Promise<unknown> {
@@ -40,7 +55,13 @@ vi.mock('imapflow', () => {
       if (imapMockState.bodyStructure === undefined) return undefined;
       return {
         uid: 1,
-        envelope: { from: [{ address: 'sender@example.test' }], subject: 'probe', date: new Date('2026-07-26T21:03:47.000Z') },
+        internalDate: new Date(imapMockState.internalDate),
+        envelope: {
+          from: [{ address: 'sender@example.test' }],
+          to: imapMockState.envelopeTo,
+          subject: 'probe',
+          date: new Date(imapMockState.envelopeDate),
+        },
         bodyStructure: imapMockState.bodyStructure,
       };
     }
@@ -62,7 +83,35 @@ function imapInbox(accountId: string, address: string): InboxData {
   return { address, authData: { imapAccountId: accountId, username: 'x', domain: 'example.com' }, provider: 'imap', apiBase: '' };
 }
 
+// envelopeTo is module-level mock state. Resetting it inside a test body only
+// runs when that test's assertions pass, so one real failure would pin the
+// recipient for every later test and bury the cause in a cascade.
+beforeEach(() => {
+  imapMockState.envelopeTo = undefined;
+  imapMockState.envelopeDate = '2020-01-01T00:00:00.000Z';
+  imapMockState.internalDate = '2026-07-26T21:03:47.000Z';
+});
+
 describe('ImapProvider polling', () => {
+  it('uses IMAP internalDate instead of a conflicting envelope date for list and detail', async () => {
+    getDb().prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('internal-date', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
+    ).run();
+    imapMockState.searchResult = [1];
+    imapMockState.bodyStructure = { type: 'text/plain' };
+    imapMockState.partContents = { '1': { content: Buffer.from('body') } };
+
+    const provider = new ImapProvider();
+    const inbox = imapInbox('internal-date', 'x@example.com');
+    const listed = await provider.getMessages(inbox);
+    const detail = await provider.getMessage(inbox, '1');
+
+    expect(listed[0].receivedAt).toBe(imapMockState.internalDate);
+    expect(detail.receivedAt).toBe(imapMockState.internalDate);
+    expect(listed[0].receivedAt).not.toBe(imapMockState.envelopeDate);
+    expect(detail.receivedAt).not.toBe(imapMockState.envelopeDate);
+  });
+
   it('fetches only the newest messages in one batched fetch call', async () => {
     getDb().prepare(
       `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('pool-limit', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
@@ -92,6 +141,93 @@ describe('ImapProvider polling', () => {
     await Promise.all([p.getMessages(inbox), p.getMessages(inbox)]);
 
     expect(imapMockState.connectCount - before).toBe(1);
+  });
+
+  it('drops a message the substring search matched but is addressed to someone else', async () => {
+    getDb().prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('substr', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
+    ).run();
+    imapMockState.searchResult = [1];
+    // IMAP SEARCH TO is a substring match, so a search for bob.smith4@ returns
+    // mail addressed to bob.smith42@. Both usernames can be live at once —
+    // generateUniqueUsername only rules out exact duplicates.
+    imapMockState.envelopeTo = [{ address: 'bob.smith42@example.com' }];
+
+    const p = new ImapProvider();
+    const messages = await p.getMessages(imapInbox('substr', 'bob.smith4@example.com'));
+
+    expect(messages).toHaveLength(0);
+  });
+
+  it('keeps a message when the server reports no recipients to check', async () => {
+    getDb().prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('norcpt', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
+    ).run();
+    imapMockState.searchResult = [1];
+    imapMockState.envelopeTo = undefined;
+
+    const p = new ImapProvider();
+    const messages = await p.getMessages(imapInbox('norcpt', 'someone@example.com'));
+
+    // Losing real mail to a sparse envelope is worse than a rare stray, the
+    // same call isMessageWithinInboxLifetime already makes for timestamps.
+    expect(messages).toHaveLength(1);
+  });
+
+  it('refuses to read a UID addressed to another tenant', async () => {
+    getDb().prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('detail-leak', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
+    ).run();
+    imapMockState.bodyStructure = { type: 'text/plain' };
+    imapMockState.partContents = { '1': { content: Buffer.from('code 123456') } };
+    imapMockState.envelopeTo = [{ address: 'bob.smith42@example.com' }];
+
+    // Filtering the listing is not enough: a UID names a message in the whole
+    // catch-all mailbox and arrives straight off the request path, so a tenant
+    // who walks small sequential integers would otherwise read a neighbour's
+    // body and verification code.
+    const p = new ImapProvider();
+    await expect(
+      p.getMessage(imapInbox('detail-leak', 'bob.smith4@example.com'), '1'),
+    ).rejects.toThrow(/not found/);
+  });
+
+  it('keeps reading a message with no envelope recipients for a catch-all mailbox', async () => {
+    getDb().prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('bcc-ok', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
+    ).run();
+    imapMockState.bodyStructure = { type: 'text/plain' };
+    imapMockState.partContents = { '1': { content: Buffer.from('bcc body') } };
+    imapMockState.envelopeTo = undefined;
+
+    // A catch-all domain mailbox exists only to serve these addresses, so
+    // refusing everything unverifiable would silently lose Bcc-only mail while
+    // buying nothing — there is no third party's private mail in there to
+    // protect. IcloudProvider passes strictRecipient because its shared mailbox
+    // is the operator's own inbox, where the trade runs the other way.
+    const msg = await new ImapProvider().getMessage(imapInbox('bcc-ok', 'someone@example.com'), '1');
+    expect(msg.text).toBe('bcc body');
+  });
+
+  it('reports a wrong-tenant UID exactly like an absent one', async () => {
+    getDb().prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain) VALUES ('detail-oracle', 'imap.test.com', 993, 'u', 'p', 'example.com')`,
+    ).run();
+    imapMockState.partContents = {};
+
+    const p = new ImapProvider();
+    const inbox = imapInbox('detail-oracle', 'bob.smith4@example.com');
+
+    imapMockState.bodyStructure = undefined; // UID does not exist at all
+    const absent = await p.getMessage(inbox, '1').catch((e: Error) => e.message);
+
+    imapMockState.bodyStructure = { type: 'text/plain' };
+    imapMockState.envelopeTo = [{ address: 'bob.smith42@example.com' }];
+    const forbidden = await p.getMessage(inbox, '1').catch((e: Error) => e.message);
+
+    // Distinguishing the two would turn the endpoint into an oracle for which
+    // UIDs are live in the shared mailbox.
+    expect(forbidden).toBe(absent);
   });
 });
 
@@ -377,5 +513,35 @@ describe('generateUniqueUsername', () => {
   it('falls back to a random suffix when every draw collides', () => {
     holdAddress('held', 'taken@example.com', 'active');
     expect(generateUniqueUsername('example.com', () => 'taken')).toMatch(/^taken[a-z0-9]{4}$/);
+  });
+});
+
+describe('describeImapError', () => {
+  it('surfaces the server text rather than the bare Command failed imapflow reports', () => {
+    // Observed against imap.mail.me.com with a bad app-specific password:
+    // the message is always "Command failed" and every useful word is on the
+    // sibling fields, so an operator was told nothing at all.
+    const err = Object.assign(new Error('Command failed'), {
+      responseText: 'Authentication Failed',
+      responseStatus: 'NO',
+      serverResponseCode: 'AUTHENTICATIONFAILED',
+      authenticationFailed: true,
+    });
+
+    expect(describeImapError(err)).toBe('authentication rejected: Authentication Failed [AUTHENTICATIONFAILED]');
+  });
+
+  it('does not label a non-auth rejection as an auth failure', () => {
+    const err = Object.assign(new Error('Command failed'), {
+      responseText: 'Mailbox does not exist',
+      responseStatus: 'NO',
+    });
+
+    expect(describeImapError(err)).toBe('Mailbox does not exist');
+  });
+
+  it('falls back to the plain message when nothing extra is attached', () => {
+    expect(describeImapError(new Error('getaddrinfo ENOTFOUND imap.bad.host'))).toBe('getaddrinfo ENOTFOUND imap.bad.host');
+    expect(describeImapError('boom')).toBe('boom');
   });
 });

@@ -7,15 +7,21 @@ import { requireAdmin, type AdminEnv } from './admin.js';
 import { checkForUpdates } from '../update-check.js';
 import { APP_VERSION } from '../version.js';
 import { rescheduleBackup } from '../backup-scheduler.js';
+import { rescheduleIcloudPool } from '../providers/icloud-pool.js';
 
 const SETTING_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof typeof DEFAULT_SETTINGS)[];
 
 function normalizeSettingValue(key: keyof typeof DEFAULT_SETTINGS, value: unknown): string {
-  if (key === 'backup_enabled') return value === '0' || value === false ? '0' : '1';
+  if (key === 'backup_enabled' || key === 'icloud_pool_enabled') return value === '0' || value === false ? '0' : '1';
   if (key === 'proxy_url') return String(value ?? '').trim();
   const n = parseInt(String(value), 10);
   if (!Number.isFinite(n) || n < 1) return DEFAULT_SETTINGS[key];
-  return String(Math.min(n, key === 'backup_interval_hours' ? 24 * 30 : 10000));
+  // A pool target above what an Apple ID can ever hold is not a setting, it is
+  // a way to spend the account. 750 is the lifetime cap on one ID.
+  const ceiling = key === 'backup_interval_hours' ? 24 * 30
+    : key === 'icloud_pool_target' ? 750
+    : 10000;
+  return String(Math.min(n, ceiling));
 }
 
 export const settingsRoutes = new Hono<AdminEnv>();
@@ -43,6 +49,7 @@ settingsRoutes.patch('/admin/settings', async (c) => {
   const updates = body.settings && typeof body.settings === 'object' ? body.settings : body;
   const saved: Record<string, string> = {};
   let backupScheduleChanged = false;
+  let icloudScheduleChanged = false;
   for (const key of SETTING_KEYS) {
     if (updates[key] === undefined) continue;
     const value = normalizeSettingValue(key, updates[key]);
@@ -51,9 +58,17 @@ settingsRoutes.patch('/admin/settings', async (c) => {
     if (key === 'backup_enabled' || key === 'backup_interval_hours') {
       backupScheduleChanged = true;
     }
+    // The enabled switch is read per pass and needs no re-arm; the interval is
+    // baked into the running timer, so it does. backup has the same split.
+    if (key === 'icloud_pool_interval_minutes') {
+      icloudScheduleChanged = true;
+    }
   }
   if (backupScheduleChanged) {
     rescheduleBackup('settings updated');
+  }
+  if (icloudScheduleChanged) {
+    rescheduleIcloudPool('settings updated');
   }
   return c.json({ ok: true, settings: saved });
 });

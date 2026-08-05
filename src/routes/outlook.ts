@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { allRows, getDb, getRow, getSetting, logActivity, setSetting } from '../db.js';
 import { checkToken, fetchAccountMailbox, fetchAccountMessage, OAuthRejectedError, renewToken } from '../providers/outlook.js';
-import { parseInboxTimestamp } from '../inbox-lifecycle.js';
+import { parseInboxStartTimestamp, parseInboxTimestamp } from '../inbox-lifecycle.js';
 import { requireAdmin, type AdminEnv } from './admin.js';
 import { importDelimited } from '../import-utils.js';
 import { fetchWithTimeout, runConcurrent } from '../utils.js';
@@ -659,13 +659,6 @@ outlookRoutes.get('/outlook/accounts', (c) => {
   return c.json({ accounts });
 });
 
-/**
- * Same slack isMessageWithinInboxLifetime() uses, for the same reason: the mail
- * host's clock is not ours. Kept equal so a message the inbox view calls "mine"
- * is never filed under a different lease here.
- */
-const LEASE_SLACK_MS = 60000;
-
 const MAILBOX_DEFAULT_LIMIT = 50;
 const MAILBOX_MAX_LIMIT = 100;
 
@@ -695,8 +688,8 @@ interface Lease {
  * it owned the mailbox for.
  *
  * The end of a lease is whichever came first: it was closed (closed_at), it
- * expired (expires_at — the PLANNED end, so only a fallback for rows closed
- * before closed_at existed), or the account was handed to the next lease. That
+ * expired (expires_at, including an active row awaiting cleanup), or the
+ * account was handed to the next lease. That
  * last cap is what makes rows with no recorded end still land somewhere honest:
  * a lease can never have owned the mailbox past the moment the next one started.
  */
@@ -712,11 +705,12 @@ function accountLeases(email: string): Lease[] {
 
   const leases: Lease[] = [];
   for (const [index, row] of rows.entries()) {
-    const startMs = parseInboxTimestamp(row.created_at) - LEASE_SLACK_MS;
-    const recordedEnd = row.status === 'active' ? '' : (row.closed_at || row.expires_at || '');
-    const explicitEnd = recordedEnd ? parseInboxTimestamp(recordedEnd) : Infinity;
+    const startMs = parseInboxStartTimestamp(row.created_at);
+    const validEnds = [parseInboxTimestamp(row.closed_at), parseInboxTimestamp(row.expires_at)]
+      .filter((value) => value > 0);
+    const explicitEnd = validEnds.length > 0 ? Math.min(...validEnds) : Infinity;
     // rows are newest-first, so the lease that superseded this one is at index-1.
-    const nextStart = index > 0 ? leases[index - 1].startMs : Infinity;
+    const nextStart = index > 0 ? parseInboxTimestamp(rows[index - 1].created_at) : Infinity;
     const endMs = Math.max(startMs, Math.min(explicitEnd || Infinity, nextStart));
     leases.push({
       id: row.id,
@@ -739,10 +733,10 @@ function classifyMessage(receivedAt: string | undefined, leases: Lease[]): { lea
   const t = Date.parse(receivedAt);
   if (!Number.isFinite(t)) return { leaseId: null, leaseState: 'undated' };
   for (const lease of leases) {
-    if (t >= lease.startMs && t <= lease.endMs) return { leaseId: lease.id, leaseState: 'lease' };
+    if (t >= lease.startMs && t < lease.endMs) return { leaseId: lease.id, leaseState: 'lease' };
   }
   const oldest = leases[leases.length - 1];
-  if (oldest && t < oldest.startMs) return { leaseId: null, leaseState: 'before' };
+  if (oldest && t < parseInboxTimestamp(oldest.createdAt)) return { leaseId: null, leaseState: 'before' };
   return { leaseId: null, leaseState: 'gap' };
 }
 

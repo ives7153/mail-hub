@@ -2,6 +2,7 @@ export const PROVIDER = {
   OUTLOOK: 'outlook',
   YYDS: 'yyds',
   IMAP: 'imap',
+  ICLOUD: 'icloud',
   MAILTM: 'mailtm',
   MAILGW: 'mailgw',
   TEMPMAIL_LOL: 'tempmail-lol',
@@ -71,7 +72,14 @@ export abstract class BaseProvider {
    * createInbox ever runs.
    */
   abstract getDomains(opts?: { for?: string; alias?: boolean }): Promise<string[]>;
-  abstract createInbox(opts?: { domain?: string; username?: string; for?: string; subdomain?: string; inboxId?: string; alias?: boolean }): Promise<InboxData>;
+  /**
+   * `account` names which pooled credential to draw from — an Apple ID, a
+   * mailbox, whatever the provider pools. Providers that hold one pool per
+   * process ignore it; a provider holding several has no other way to let a
+   * caller say which, and picking silently is wrong when the accounts are not
+   * interchangeable.
+   */
+  abstract createInbox(opts?: { domain?: string; username?: string; for?: string; subdomain?: string; inboxId?: string; alias?: boolean; account?: string }): Promise<InboxData>;
   abstract getMessages(inbox: InboxData): Promise<Message[]>;
   abstract getMessage(inbox: InboxData, messageId: string): Promise<MessageDetail>;
 

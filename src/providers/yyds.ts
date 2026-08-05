@@ -179,7 +179,7 @@ export class YydsProvider extends BaseProvider {
     db.prepare(`UPDATE yyds_accounts SET supports_wildcard = ? WHERE api_key = ?`).run(supports ? 1 : 0, apiKey);
   }
 
-  async createInbox(opts?: { domain?: string; username?: string; subdomain?: string }): Promise<InboxData> {
+  async createInbox(opts?: { domain?: string; username?: string; subdomain?: string; inboxId?: string }): Promise<InboxData> {
     const selected = this.pickKey(true);
     if (!selected) throw new Error('YYDS 账号池中无可用 API Key（可能全部达到日配额或冷却中）');
 
@@ -214,6 +214,7 @@ export class YydsProvider extends BaseProvider {
                 accountId: json.data.id,
                 tempToken: json.data.token,
                 address: json.data.address,
+                ...(opts?.inboxId ? { inboxId: opts.inboxId } : {}),
               },
               provider: this.meta.name,
               apiBase: API_BASE,
@@ -261,6 +262,7 @@ export class YydsProvider extends BaseProvider {
         accountId: json.data.id,
         tempToken: json.data.token,
         address: json.data.address,
+        ...(opts?.inboxId ? { inboxId: opts.inboxId } : {}),
       },
       provider: this.meta.name,
       apiBase: API_BASE,
@@ -283,9 +285,15 @@ export class YydsProvider extends BaseProvider {
 
     const db = getDb();
     const newAuthData = { ...inbox.authData, tempToken: json.data.token };
-    db.prepare(
-      `UPDATE inboxes SET auth_data = ? WHERE address = ? AND provider = 'yyds'`,
-    ).run(JSON.stringify(newAuthData), inbox.address);
+    // Update by inbox id, not address: the same YYDS address can appear on both
+    // the current row and closed history rows, and matching on address would
+    // overwrite auth_data on all of them — writing this inbox's fresh token onto
+    // a stale row (or clobbering a sibling lease's token).
+    if (inbox.authData.inboxId) {
+      db.prepare(
+        `UPDATE inboxes SET auth_data = ? WHERE id = ? AND provider = 'yyds'`,
+      ).run(JSON.stringify(newAuthData), inbox.authData.inboxId);
+    }
 
     return json.data.token;
   }

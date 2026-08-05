@@ -12,12 +12,14 @@ let getDb: () => Database.Database;
 let registerAllProviders: () => void;
 let rateLimiter: { reset(): void; getCreateStatus(provider: string): RateLimitStatus };
 let resetTokenCache: () => void;
+let resetRenewalAttempts: () => void;
 
 beforeAll(async () => {
   ({ initDb, getDb } = await import('../src/db.js'));
   ({ registerAllProviders } = await import('../src/providers/index.js'));
   ({ rateLimiter } = await import('../src/rate-limiter.js'));
   ({ resetTokenCache } = await import('../src/providers/outlook.js'));
+  ({ resetRenewalAttempts } = await import('../src/providers/icloud-pool.js'));
 
   if (existsSync(process.env.DB_PATH!)) unlinkSync(process.env.DB_PATH!);
   initDb();
@@ -35,6 +37,9 @@ beforeEach(() => {
     'yyds_accounts',
     'yyds_domain_cache',
     'imap_accounts',
+    'icloud_accounts',
+    'icloud_addresses',
+    'icloud_auth_sessions',
     'settings',
     'api_keys',
     'fail_log',
@@ -48,6 +53,7 @@ beforeEach(() => {
   registerAllProviders();
   rateLimiter.reset();
   resetTokenCache();
+  resetRenewalAttempts();
 });
 
 afterAll(() => {

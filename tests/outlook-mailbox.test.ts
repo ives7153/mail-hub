@@ -127,7 +127,8 @@ describe('Outlook account mailbox view', () => {
       { id: 'm-ancient', subject: 'before the pool', receivedAt: '2026-07-20T00:00:00Z' },
       { id: 'm-old', subject: 'GitHub code', receivedAt: '2026-07-24T09:12:00Z' },
       { id: 'm-idle', subject: 'newsletter while idle', receivedAt: '2026-07-26T13:10:00Z' },
-      { id: 'm-new', subject: 'Steam code', receivedAt: '2026-07-27T14:03:00Z' },
+      { id: 'm-new-ambiguous', subject: 'same-second mail', receivedAt: '2026-07-27T14:02:00.100Z' },
+      { id: 'm-new', subject: 'Steam code', receivedAt: '2026-07-27T14:02:01Z' },
     ]);
 
     // What the lease view shows: only its own message.
@@ -141,6 +142,7 @@ describe('Outlook account mailbox view', () => {
     const body = await getMailbox(email);
     expect(body.messages.map((m) => [m.id, m.leaseState, m.leaseId])).toEqual([
       ['m-new', 'lease', 'i-new'],
+      ['m-new-ambiguous', 'gap', null],
       ['m-idle', 'gap', null],
       ['m-old', 'lease', 'i-old'],
       ['m-ancient', 'before', null],
@@ -195,6 +197,29 @@ describe('Outlook account mailbox view', () => {
     ]);
   });
 
+  it('applies active expires_at as a strict half-open mailbox classification boundary', async () => {
+    const email = 'pool-active-expiry@outlook.com';
+    insertAccount(email);
+    insertLease('i-active-expiry', email, {
+      createdAt: '2026-07-24 09:00:00',
+      expiresAt: '2026-07-24 10:00:00',
+      status: 'active',
+    });
+    stubMailbox([
+      { id: 'm-before-expiry', subject: 'before expiry', receivedAt: '2026-07-24T09:59:59Z' },
+      { id: 'm-at-expiry', subject: 'at expiry', receivedAt: '2026-07-24T10:00:00Z' },
+      { id: 'm-after-expiry', subject: 'after expiry', receivedAt: '2026-07-24T10:00:01Z' },
+    ]);
+
+    const body = await getMailbox(email);
+    expect(body.messages.map((message) => [message.id, message.leaseState])).toEqual([
+      ['m-after-expiry', 'gap'],
+      ['m-at-expiry', 'gap'],
+      ['m-before-expiry', 'lease'],
+    ]);
+    expect(body.leases[0].endedAt).toBe('2026-07-24T10:00:00.000Z');
+  });
+
   it('caps a lease with no recorded end at the moment the next one took the account', async () => {
     const email = 'pool4@outlook.com';
     insertAccount(email);
@@ -205,21 +230,24 @@ describe('Outlook account mailbox view', () => {
 
     stubMailbox([
       { id: 'm-a', subject: 'first tenant', receivedAt: '2026-07-24T20:00:00Z' },
+      { id: 'm-handoff', subject: 'ambiguous handoff', receivedAt: '2026-07-25T09:00:00.100Z' },
       { id: 'm-b', subject: 'second tenant', receivedAt: '2026-07-25T10:00:00Z' },
     ]);
 
     const body = await getMailbox(email);
     expect(body.messages.map((m) => [m.id, m.leaseId])).toEqual([
       ['m-b', 'i-b'],
+      ['m-handoff', null],
       ['m-a', 'i-a'],
     ]);
     // Attribution alone cannot show the cap — newest-first matching already
     // keeps an open-ended old lease from stealing newer mail. What the cap fixes
     // is the window the UI prints: without it this lease reads "still running"
-    // forever, on an account that was handed on a day later.
+    // forever, on an account that was handed on a day later. The handoff itself
+    // is strict: the older lease ends exactly when the next lease starts.
     const older = body.leases.find((l) => l.id === 'i-a')!;
     expect(older.endedAt).not.toBeNull();
-    expect(Date.parse(older.endedAt!)).toBe(Date.UTC(2026, 6, 25, 8, 59, 0));
+    expect(Date.parse(older.endedAt!)).toBe(Date.UTC(2026, 6, 25, 9, 0, 0));
     expect(body.leases.find((l) => l.id === 'i-b')!.endedAt).toBeNull();
   });
 

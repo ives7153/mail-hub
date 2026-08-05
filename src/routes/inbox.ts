@@ -6,7 +6,7 @@ import { registry } from '../providers/registry.js';
 import { rateLimiter } from '../rate-limiter.js';
 import { extractCodes } from '../code-extractor.js';
 import { allRows, bumpServiceReported, getDb, getRow, getSetting, logActivity } from '../db.js';
-import { isMessageWithinInboxLifetime, parseInboxTimestamp, parseStoredInbox, releaseInboxResources, rowToInboxData } from '../inbox-lifecycle.js';
+import { isMessageWithinInboxLifetime, parseStoredInbox, releaseInboxResources, rowToInboxData } from '../inbox-lifecycle.js';
 import type { BaseProvider, InboxData, Message, MessageDetail } from '../providers/base.js';
 import { PROVIDER } from '../providers/base.js';
 import { stripPlusTag } from '../providers/outlook.js';
@@ -20,12 +20,15 @@ type AppContext = Context<AdminEnv>;
 type QueryParam = string | number | null;
 
 interface InboxDataRow {
+  id: string;
   provider: string;
   address: string;
   auth_data: string;
   api_base: string | null;
   status?: string;
   created_at?: string;
+  closed_at?: string | null;
+  expires_at?: string | null;
 }
 
 function checkAutoBlock(db: Database.Database, service: string | undefined, provider: string, domain: string): { service: string; domain: string; rule: number }[] {
@@ -145,6 +148,7 @@ inboxRoutes.post('/inbox', async (c) => {
       domain: body.domain,
       subdomain: body.subdomain,
       username: body.username,
+      account: body.account,
       alias: body.alias === true,
       duration: body.duration,
       needPolling: body.needPolling,
@@ -214,7 +218,7 @@ inboxRoutes.get('/inbox/:id', (c) => {
 
 inboxRoutes.get('/inbox/:id/messages', async (c) => {
   const id = c.req.param('id');
-  const row = getInboxRow<InboxDataRow>(c, id, 'provider, address, auth_data, api_base, status, created_at');
+  const row = getInboxRow<InboxDataRow>(c, id, 'id, provider, address, auth_data, api_base, status, created_at, closed_at, expires_at');
   if (!row) {
     return c.json({ error: 'Inbox not found' }, 404);
   }
@@ -232,7 +236,6 @@ inboxRoutes.get('/inbox/:id/messages', async (c) => {
     }, 400);
   }
 
-  const inboxCreatedAt = parseInboxTimestamp(row.created_at);
   const inbox = rowToInboxData(row);
   // The account behind the lease, so a client can offer the mailbox view without
   // guessing it back out of an alias address. Outlook only: it is the one pool
@@ -245,7 +248,7 @@ inboxRoutes.get('/inbox/:id/messages', async (c) => {
 
   try {
     const messages = await pollProvider(providerName, provider, inbox);
-    const own = messages.filter((m) => isMessageWithinInboxLifetime(m.receivedAt, inboxCreatedAt));
+    const own = messages.filter((m) => isMessageWithinInboxLifetime(m.receivedAt, row));
     return c.json({ messages: own, status, address, provider: providerName, accountEmail });
   } catch (e) {
     if (e instanceof PollRateLimitError) return pollRateLimitResponse(c, e);
@@ -256,7 +259,7 @@ inboxRoutes.get('/inbox/:id/messages', async (c) => {
 inboxRoutes.get('/inbox/:id/messages/:mid', async (c) => {
   const id = c.req.param('id');
   const mid = c.req.param('mid');
-  const row = getInboxRow<InboxDataRow>(c, id, 'provider, address, auth_data, api_base, created_at');
+  const row = getInboxRow<InboxDataRow>(c, id, 'id, provider, address, auth_data, api_base, status, created_at, closed_at, expires_at');
   if (!row) {
     return c.json({ error: 'Inbox not found' }, 404);
   }
@@ -265,14 +268,12 @@ inboxRoutes.get('/inbox/:id/messages/:mid', async (c) => {
   const provider = registry.get(providerName);
   if (!provider) return c.json({ error: `Provider '${providerName}' not available` }, 500);
 
-  const inboxCreatedAt = parseInboxTimestamp(row.created_at);
-
   try {
     const message = await provider.getMessage(rowToInboxData(row), mid);
     // The id came from a listing we already filtered, but ids are guessable on
     // some providers and a shared mailbox would happily serve the previous
     // tenant's message. Re-check the boundary on the detail path too.
-    if (!isMessageWithinInboxLifetime(message.receivedAt, inboxCreatedAt)) {
+    if (!isMessageWithinInboxLifetime(message.receivedAt, row)) {
       return c.json({ error: 'Message not found' }, 404);
     }
     return c.json(message);
@@ -295,24 +296,23 @@ inboxRoutes.get('/inbox/:id/code', async (c) => {
     }
   }
 
-  const row = getInboxRow<InboxDataRow>(c, id, 'provider, address, auth_data, api_base, created_at');
+  const row = getInboxRow<InboxDataRow>(c, id, 'id, provider, address, auth_data, api_base, status, created_at, closed_at, expires_at');
   if (!row) {
     return c.json({ error: 'Inbox not found' }, 404);
   }
 
-  const { provider: providerName, created_at: createdAt } = row;
+  const { provider: providerName } = row;
   const provider = registry.get(providerName);
   if (!provider || !provider.meta.features.pollInbox) {
     return c.json({ error: 'Inbox polling not supported for this provider' }, 400);
   }
 
-  const inboxCreatedAt = parseInboxTimestamp(createdAt);
-
   const inbox = rowToInboxData(row);
+  const inboxWindow = row;
 
   function filterNew(msgs: Message[]): Message[] {
     return msgs.filter(m => {
-      if (!isMessageWithinInboxLifetime(m.receivedAt, inboxCreatedAt)) return false;
+      if (!isMessageWithinInboxLifetime(m.receivedAt, inboxWindow)) return false;
       if (sinceTimestamp === undefined) return true;
       // `since` is an explicit "strictly newer than" cursor from the caller, so
       // an undated message cannot satisfy it.
@@ -364,6 +364,10 @@ inboxRoutes.get('/inbox/:id/code', async (c) => {
   } catch (error) {
     log.warn('failed to fetch message detail, using summary message', { inboxId: id, messageId: latest.id, error: errorMessage(error) });
     detail = latest;
+  }
+
+  if (!isMessageWithinInboxLifetime(detail.receivedAt, inboxWindow)) {
+    return c.json({ codes: [], email: null, messageId: null, receivedAt: null });
   }
 
   let codes = extractCodes({

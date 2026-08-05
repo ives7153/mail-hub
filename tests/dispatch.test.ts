@@ -156,6 +156,22 @@ describe('dispatcher provider selection', () => {
     registry.unregister('fake');
   });
 
+  it('applies lowercase block rules to mixed-case IMAP domains during automatic dispatch', async () => {
+    const db = getDb();
+    db.prepare(`UPDATE provider_config SET enabled = 0`).run();
+    db.prepare(`UPDATE provider_config SET enabled = 1, auto_dispatch = 1 WHERE provider = 'imap'`).run();
+    db.prepare(
+      `INSERT INTO imap_accounts (id, host, port, user, password, domain)
+       VALUES ('case-block', 'imap.case.test', 993, 'user', 'password', 'Case.Test')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO blocks (service, domain, provider) VALUES (?, ?, ?)`,
+    ).run('case-target.test', 'case.test', 'imap');
+
+    await expect(dispatch({ for: 'case-target.test' })).rejects.toThrow(/exhausted|blocked|unblocked/i);
+    expect(db.prepare(`SELECT COUNT(*) AS count FROM inboxes`).get()).toEqual({ count: 0 });
+  });
+
   it('reserves create capacity before upstream calls during auto-dispatch', async () => {
     const primary = new SlowFakeProvider({
       name: 'primary',

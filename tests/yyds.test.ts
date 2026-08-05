@@ -34,6 +34,50 @@ describe('YYDS account management', () => {
     expect(domains).toEqual(['cached-a.test', 'cached-b.test']);
   });
 
+  it('refreshes a temporary token only on the current inbox id', async () => {
+    const auth = { accountId: 'shared-account', address: 'shared@yyds.test', tempToken: 'old-token', inboxId: 'current' };
+    getDb().prepare(
+      `INSERT INTO inboxes (id, provider, address, auth_data, api_base) VALUES
+       ('current', 'yyds', 'shared@yyds.test', ?, 'https://api.yyds.test'),
+       ('historical', 'yyds', 'shared@yyds.test', ?, 'https://api.yyds.test')`,
+    ).run(JSON.stringify(auth), JSON.stringify({ ...auth, inboxId: 'historical' }));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response('', { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { token: 'new-token' } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { messages: [] } }), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await new YydsProvider().getMessages({ address: 'shared@yyds.test', authData: auth, provider: 'yyds', apiBase: 'https://api.yyds.test' });
+
+    const historical = getRow<{ auth_data: string }>(getDb(), `SELECT auth_data FROM inboxes WHERE id = 'historical'`);
+    expect(JSON.parse(historical!.auth_data).tempToken).toBe('old-token');
+  });
+
+  it('persists a refreshed token for a legacy row without inboxId and leaves same-address history unchanged', async () => {
+    const currentAuth = { accountId: 'shared-account', address: 'legacy@yyds.test', tempToken: 'old-current' };
+    const historicalAuth = { accountId: 'shared-account', address: 'legacy@yyds.test', tempToken: 'old-historical' };
+    getDb().prepare(
+      `INSERT INTO inboxes (id, provider, address, auth_data, api_base, owner_key) VALUES
+       ('legacy-current', 'yyds', 'legacy@yyds.test', ?, 'https://api.yyds.test', '__mail_hub_admin__'),
+       ('legacy-historical', 'yyds', 'legacy@yyds.test', ?, 'https://api.yyds.test', '__mail_hub_admin__')`,
+    ).run(JSON.stringify(currentAuth), JSON.stringify(historicalAuth));
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(new Response('', { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { token: 'new-token' } }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { messages: [] } }), { status: 200 })));
+
+    const response = await app.request('/api/inbox/legacy-current/messages', { headers: authHeaders() });
+
+    expect(response.status).toBe(200);
+    const rows = getDb().prepare(
+      `SELECT id, auth_data FROM inboxes WHERE id IN ('legacy-current', 'legacy-historical') ORDER BY id`,
+    ).all() as { id: string; auth_data: string }[];
+    expect(rows.map((row) => [row.id, JSON.parse(row.auth_data).tempToken])).toEqual([
+      ['legacy-current', 'new-token'],
+      ['legacy-historical', 'old-historical'],
+    ]);
+  });
+
   describe('POST /api/yyds/import', () => {
     it('imports accounts from newline-delimited text', async () => {
       const res = await app.request('/api/yyds/import', {

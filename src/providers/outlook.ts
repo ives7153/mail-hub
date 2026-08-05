@@ -396,8 +396,10 @@ export class OutlookProvider extends BaseProvider {
     let whereClauses = ALLOCABLE_ACCOUNT_WHERE;
     const selectParams: unknown[] = [];
     if (opts?.domain) {
-      whereClauses += ` AND email LIKE ?`;
-      selectParams.push(`%@${opts.domain}`);
+      // Exact comparison, not LIKE: a caller-supplied '%' or '_' would
+      // otherwise wildcard past the domain the dispatcher chose.
+      whereClauses += ` AND SUBSTR(email, INSTR(email, '@') + 1) = ?`;
+      selectParams.push(opts.domain);
     }
     // used_services is the anti-reuse blacklist for the ACCOUNT's own address.
     // A fresh alias is a new address at the target service, which is the point
@@ -410,7 +412,7 @@ export class OutlookProvider extends BaseProvider {
     }
     const params: unknown[] = [inboxId, ...selectParams];
 
-    const sql = `UPDATE outlook_accounts SET assigned_inbox_id = ?
+    const sql = `UPDATE outlook_accounts SET assigned_inbox_id = ?, assigned_at = datetime('now')
       WHERE email = (
         SELECT email FROM outlook_accounts
         WHERE ${whereClauses}
@@ -476,16 +478,30 @@ export class OutlookProvider extends BaseProvider {
     return readMailboxMessage(email, inbox.authData.clientId, freshToken, messageId);
   }
 
-  async deleteInbox(inbox: InboxData): Promise<void> {
-    const db = getDb();
-    db.prepare(`UPDATE outlook_accounts SET assigned_inbox_id = NULL WHERE email = ?`).run(inbox.authData.email);
-  }
+  /**
+   * Nothing to do here.
+   *
+   * Freeing by email alone would steal the account from whichever inbox holds
+   * it now, and releaseInboxResources calls releaseInbox straight afterwards
+   * on every path that reaches this one — so the release was redundant as well
+   * as wrong.
+   */
+  async deleteInbox(_inbox: InboxData): Promise<void> {}
 
-  async releaseInbox(inbox: InboxData, inboxId: string): Promise<void> {
-    const email = accountEmailOf(inbox);
+  /**
+   * Release the account only if this inbox is the one still holding it.
+   *
+   * Matching on email as well would let a stale or replayed release free an
+   * account already reassigned to another inbox; the hourly purge re-releases
+   * an already-closed inbox a day after cleanup closed it (app.ts:537-553), so
+   * that replay happens as a matter of course. Two live inboxes on one mailbox
+   * read each other's mail.
+   */
+  async releaseInbox(_inbox: InboxData, inboxId: string): Promise<void> {
+    if (!inboxId) return;
     getDb().prepare(
-      `UPDATE outlook_accounts SET assigned_inbox_id = NULL WHERE assigned_inbox_id = ? OR email = ?`
-    ).run(inboxId, email);
+      `UPDATE outlook_accounts SET assigned_inbox_id = NULL, assigned_at = NULL WHERE assigned_inbox_id = ?`
+    ).run(inboxId);
   }
 }
 

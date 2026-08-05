@@ -19,6 +19,9 @@ export const DEFAULT_SETTINGS = {
   retention_inbox_days: '7',
   proxy_url: '',
   batch_concurrency: '5',
+  icloud_pool_enabled: '1',
+  icloud_pool_target: '10',
+  icloud_pool_interval_minutes: '15',
 } as const;
 
 export type BackupInfo = {
@@ -77,6 +80,7 @@ CREATE TABLE IF NOT EXISTS outlook_accounts (
   token_status TEXT DEFAULT '',
   token_renewed_at TEXT,
   assigned_inbox_id TEXT,
+  assigned_at TEXT,
   group_name TEXT DEFAULT '未分组',
   account_type TEXT NOT NULL DEFAULT 'short',
   last_checked_at TEXT,
@@ -192,6 +196,51 @@ CREATE TABLE IF NOT EXISTS imap_accounts (
   last_checked_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS icloud_accounts (
+  id TEXT PRIMARY KEY,
+  apple_id TEXT NOT NULL,
+  region TEXT NOT NULL DEFAULT 'global',
+  auth_mode TEXT NOT NULL DEFAULT 'cookie',
+  cookies TEXT NOT NULL DEFAULT '',
+  password TEXT NOT NULL DEFAULT '',
+  trust_token TEXT NOT NULL DEFAULT '',
+  hme_service_url TEXT NOT NULL DEFAULT '',
+  pool_cooldown_until TEXT,
+  imap_host TEXT NOT NULL DEFAULT 'imap.mail.me.com',
+  imap_port INTEGER NOT NULL DEFAULT 993,
+  imap_user TEXT NOT NULL DEFAULT '',
+  imap_password TEXT NOT NULL DEFAULT '',
+  imap_tls INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'active',
+  last_error TEXT,
+  last_checked_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS icloud_addresses (
+  hme TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  anonymous_id TEXT NOT NULL UNIQUE,
+  state TEXT NOT NULL DEFAULT 'free',
+  assigned_inbox_id TEXT,
+  assigned_at TEXT,
+  use_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_icloud_addresses_free
+  ON icloud_addresses (account_id, state);
+
+CREATE TABLE IF NOT EXISTS icloud_auth_sessions (
+  id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending_mfa',
+  error TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 export function initDb(): Database.Database {
@@ -231,6 +280,11 @@ export function initDb(): Database.Database {
     // was released". NULL on rows closed before this column existed, which
     // callers must read as "end unknown", not "still open".
     `ALTER TABLE inboxes ADD COLUMN closed_at TEXT`,
+    // When the account was claimed for its current inbox. The orphan reaper
+    // needs it to spare a just-claimed account whose inbox row is milliseconds
+    // from being written; icloud_addresses has carried the same column from
+    // birth for the same reason.
+    `ALTER TABLE outlook_accounts ADD COLUMN assigned_at TEXT`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (e) {

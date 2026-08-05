@@ -34,7 +34,7 @@ Response 200:
 ```json
 {
   "status": "ok",
-  "version": "0.9.9",
+  "version": "0.10.1",
   "startedAt": "2025-01-01T00:00:00Z",
   "uptime": 3600,
   "db": "connected"
@@ -62,6 +62,7 @@ Create a new temporary inbox.
   "domain": "example.com",    // optional: request a specific email domain
   "subdomain": "team-a",      // optional: wildcard child domain prefix (YYDS only)
   "username": "customuser",   // optional: custom username
+  "account": "me@icloud.com", // optional: which pooled account to draw from (iCloud only)
   "alias": true,              // optional: ask for a sub-address (see below)
   "duration": 600,            // optional: lifespan in seconds
   "needPolling": true         // optional: require polling support (default: true)
@@ -74,6 +75,14 @@ providers advertising `features.alias` (currently Outlook, which returns
 `account+tag@outlook.com`); silently ignored by the rest, so with auto-dispatch
 you may receive a plain address. Read `address` in the response for what you
 actually got.
+
+**`account`** — name the pooled credential the address should come from, by id
+or by Apple ID. Honored by the iCloud provider only; other providers ignore it.
+
+Several Apple IDs are not interchangeable: each forwards its aliases to its own
+mailbox, so which account an address came from decides which mailbox has to be
+readable for the code to arrive. Omit it and the least-used free address across
+every usable account is chosen.
 
 The inbox still occupies exactly one pooled account — an alias is a different
 address at the target service, not extra pool capacity. Use it for services that
@@ -1293,6 +1302,137 @@ On failure: `{ "ok": false, "error": "Connection refused" }`
 
 ---
 
+## iCloud Aliases (Admin)
+
+Hide My Email is a **forwarding alias, not a mailbox**: Apple exposes no API for
+reading mail sent to one. Every message is forwarded to an address the account
+owner chose, so this provider has two halves that fail independently — a cookie
+or SRP session that mints addresses, and an IMAP login that reads their mail.
+
+The forwarding address is frequently **not** an Apple mailbox. When the Apple ID
+is a Gmail or Outlook address, the read half must point at that provider's IMAP
+server rather than Apple's.
+
+Requires an active **iCloud+** subscription. An Apple ID is capped at **750
+addresses for its lifetime**, so addresses are recycled rather than minted per
+inbox — releasing an inbox returns its address to the pool.
+
+### Account status
+
+| Status | Meaning |
+|--------|---------|
+| `active` | Both halves work: addresses can be minted and their mail read |
+| `degraded` | The session expired. Existing addresses still receive and read; minting is not possible until the cookie is replaced or SRP re-runs |
+| `error` | The read half is broken. Addresses cannot be polled, so dispatch refuses this account |
+
+### Address states
+
+| State | Meaning |
+|-------|---------|
+| `free` | In the pool, available to claim |
+| `assigned` | Held by a live inbox |
+| `retired` | Deactivated at Apple after being burned; never handed out again, and its slot stays spent |
+
+### GET /api/icloud/accounts — List Accounts
+
+Cookies, the Apple ID password, the trust token and the IMAP password are never
+returned.
+
+### POST /api/icloud/accounts — Add Account
+
+```json
+{
+  "appleId": "me@gmail.com",
+  "region": "global",                  // or "china"
+  "cookies": "<paste anything>",
+  "imapUser": "me@gmail.com",          // where Hide My Email forwards
+  "imapPassword": "<app password>",
+  "imapHost": "imap.gmail.com",        // defaults to imap.mail.me.com
+  "imapPort": 993
+}
+```
+
+`cookies` accepts whatever the browser put on the clipboard: Copy as cURL in any
+shell dialect, Copy as PowerShell, a cookie extension's JSON export, or a bare
+`Cookie` header. A paste missing `X-APPLE-WEBAUTH-TOKEN` or
+`X-APPLE-WEBAUTH-USER` is rejected with `400` naming the missing cookie, rather
+than stored to fail later.
+
+### POST /api/icloud/accounts/:id/test — Test Both Halves
+
+Validates the session against Apple, reports where Hide My Email delivers, and
+logs into the IMAP mailbox. Returns `{ ok, serviceUrl, forwardTo,
+forwardMismatch, hmeError, imapError }` — the two errors are separate because
+they are fixed in different places.
+
+### POST /api/icloud/accounts/:id/cookies — Replace an Expired Cookie
+
+Swaps the session in place, keeping the address pool. Deleting and recreating
+the account would spend every alias it holds.
+
+### POST /api/icloud/accounts/:id/srp/begin — Sign In over SRP
+
+`{ "password": "<Apple ID password>" }` → `{ sessionId, needsMfa }`.
+
+A cookie expires within hours; a trust token lasts far longer, so the six-digit
+code is asked for once per Apple ID rather than once per session. When Apple
+accepts a stored trust token, `needsMfa` is `false` and no code is sent.
+
+### GET /api/icloud/srp/:sessionId/phones — Trusted Phone Numbers
+
+For an operator with no Apple device to hand. Apple masks the digits itself.
+
+### POST /api/icloud/srp/:sessionId/sms — Send the Code by SMS
+
+`{ "phoneId": 1 }`
+
+### POST /api/icloud/accounts/:id/srp/complete — Submit the Code
+
+`{ "sessionId": "...", "code": "123456" }`
+
+Sessions expire after five minutes. The in-flight handshake lives in memory, so
+a restart between begin and complete loses the attempt — sign in again and Apple
+pushes a fresh code.
+
+### POST /api/icloud/accounts/:id/generate — Mint Addresses Now
+
+`{ "count": 1 }` (max 5). Manual top-up; the scheduled task normally handles
+this. Apple's own refusal text is returned verbatim in `error` rather than
+classified, because its failure taxonomy is undocumented.
+
+### DELETE /api/icloud/accounts/:id — Remove an Account
+
+Refuses with `409` while any of its addresses is held by a live inbox. Repeat
+with `?force=1` to delete anyway.
+
+### GET /api/icloud/addresses — The Address Pool
+
+### GET /api/icloud/addresses/:hme/messages — Read an Address's Mail
+
+Everything that has ever arrived at the address, unlike `GET /api/inbox/:id/messages`
+which hides anything older than the inbox asking.
+
+### GET /api/icloud/addresses/:hme/messages/:uid — Message Detail
+
+### POST /api/icloud/addresses/:hme/retire — Retire a Burned Address
+
+Deactivates it at Apple and never hands it out again. Refuses with `409` while
+an inbox holds it. **The slot it occupies stays spent** — 750 is the lifetime
+total for one Apple ID.
+
+### Automatic refill
+
+A background task tops the pool up to `icloud_pool_target` (default 10) every
+`icloud_pool_interval_minutes` (default 15), minting at most 5 per pass. Any
+refusal from Apple sets a 45-minute cooldown, stored in the database so a
+restart cannot clear it. Reconciliation runs first each pass and adopts only
+addresses carrying Mail Hub's own label — an unmarked alias may be one the
+account owner created by hand, and handing that to a tenant would expose their
+private mail.
+
+Controlled from the iCloud page, or through `PATCH /api/admin/settings` with
+`icloud_pool_enabled` and `icloud_pool_target`. The target is clamped at 750.
+
 ## Target Services (Admin)
 
 ### GET /api/services — Service Summary
@@ -1411,7 +1551,7 @@ Mounted under `/api/admin`.
 **Response 200**:
 ```json
 {
-  "version": "0.9.9",
+  "version": "0.10.1",
   "uptime": 3600,
   "dbPath": "/app/data/mail.db",
   "dbSize": "1.2 MB",
@@ -1427,8 +1567,8 @@ Queries the Mail Hub GitHub repository for the highest stable `vX.Y.Z` tag and c
 **Response 200**:
 ```json
 {
-  "currentVersion": "0.9.9",
-  "latestVersion": "0.9.10",
+  "currentVersion": "0.10.1",
+  "latestVersion": "0.10.2",
   "updateAvailable": true,
   "checkedAt": "2026-07-17T00:00:00.000Z",
   "source": "github-api"

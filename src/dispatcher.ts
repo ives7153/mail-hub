@@ -21,6 +21,7 @@ interface DispatchOptions {
   domain?: string;
   subdomain?: string;
   username?: string;
+  account?: string;
   duration?: number;
   needPolling?: boolean;
   ownerKey?: string;
@@ -104,11 +105,20 @@ export function getDomainAtLevel(domain: string, level: number): string {
 }
 
 function isDomainBlocked(domain: string, blockedSet: Set<string>): boolean {
-  const parts = domain.split('.');
+  const normalizedDomain = canonicalBlockDomain(domain);
+  const parts = normalizedDomain.split('.');
   for (let i = 0; i < parts.length; i++) {
     if (blockedSet.has(parts.slice(i).join('.'))) return true;
   }
   return false;
+}
+
+// Domains are user-entered (IMAP catch-alls especially) and can carry stray
+// case or whitespace. Normalize both the candidate and the stored block list
+// through the same funnel so a lowercase block rule cannot be bypassed by a
+// mixed-case domain.
+function canonicalBlockDomain(domain: string): string {
+  return domain.trim().replace(/[A-Z]/g, (char) => char.toLowerCase());
 }
 
 function getBlockedDomains(service: string): Set<string> {
@@ -118,7 +128,7 @@ function getBlockedDomains(service: string): Set<string> {
      WHERE service = ? OR service = '*'`,
     service,
   );
-  return new Set(rows.map((row) => row.domain));
+  return new Set(rows.map((row) => canonicalBlockDomain(row.domain)));
 }
 
 /**
@@ -283,6 +293,7 @@ async function tryCreateInbox(
     ...(opts.for ? { for: opts.for } : {}),
     ...(opts.subdomain ? { subdomain: opts.subdomain } : {}),
     ...(opts.username ? { username: opts.username } : {}),
+    ...(opts.account ? { account: opts.account } : {}),
     ...(opts.alias ? { alias: true } : {}),
     ...(duration ? { duration } : {}),
     inboxId: id,

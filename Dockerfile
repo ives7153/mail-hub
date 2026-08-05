@@ -2,7 +2,13 @@ FROM node:20-alpine AS build
 RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci || npm install
+# --omit=optional keeps keytar out. It arrives as an optional dependency of
+# icloudjs with an install script, so every build would compile a native module
+# through node-gyp — for a keychain this code goes out of its way never to
+# touch (icloud-auth always passes username and password explicitly so the
+# library never reaches for it). The only other production optional package is
+# node-addon-api, which is keytar's own build dependency.
+RUN npm ci --omit=optional || npm install --omit=optional
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build

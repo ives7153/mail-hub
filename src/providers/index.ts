@@ -6,6 +6,7 @@ const log = createLogger('providers');
 import { ImapProvider } from './imap.js';
 import { OutlookProvider } from './outlook.js';
 import { YydsProvider } from './yyds.js';
+import { IcloudProvider } from './icloud.js';
 import { TemplateProvider, type TemplateProviderConfig } from './template-provider.js';
 import { BUILTIN_TEMPLATES } from './builtin-templates.js';
 
@@ -15,6 +16,7 @@ export function registerAllProviders(): void {
   registry.register(new ImapProvider());
   registry.register(new OutlookProvider());
   registry.register(new YydsProvider());
+  registry.register(new IcloudProvider());
 
   registerTemplateProviders();
 }

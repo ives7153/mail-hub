@@ -7,6 +7,7 @@ import { cleanupExpired, createApp } from './app.js';
 import { createLogger } from './logger.js';
 import { logIgnoredError } from './errors.js';
 import { startBackupScheduler, stopBackupScheduler } from './backup-scheduler.js';
+import { startIcloudPool, stopIcloudPool } from './providers/icloud-pool.js';
 
 const log = createLogger('server');
 
@@ -18,6 +19,7 @@ async function main() {
   void cleanupExpired();
   const cleanupInterval = setInterval(() => void cleanupExpired(), 60 * 60 * 1000);
   startBackupScheduler();
+  startIcloudPool();
 
   const app = createApp();
   const server = serve({ fetch: app.fetch, hostname: config.host, port: config.port }, (info) => {
@@ -31,6 +33,7 @@ async function main() {
     log.info('shutting down');
     clearInterval(cleanupInterval);
     stopBackupScheduler();
+    stopIcloudPool();
     server.close(() => {
       try { getDb().close(); } catch (error) {
         logIgnoredError(log, 'database close failed during shutdown', error);

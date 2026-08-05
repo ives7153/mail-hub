@@ -93,6 +93,42 @@ describe('expired inbox cleanup', () => {
     );
     expect(account?.assigned_inbox_id).toBeNull();
   });
+
+  it('spares an Outlook account claimed moments ago whose inbox row is still coming', async () => {
+    const db = getDb();
+    // The dispatcher claims the account first and writes the inbox row moments
+    // later; a cleanup firing in that window used to see a "missing" inbox and
+    // hand the account to a second caller.
+    db.prepare(
+      `INSERT INTO outlook_accounts (email, password, client_id, refresh_token, assigned_inbox_id, assigned_at, account_type)
+       VALUES ('midclaim@outlook.com', 'pw', 'c', 'r', 'being-written', datetime('now'), 'long')`,
+    ).run();
+
+    await cleanupExpired();
+
+    const account = getRow<{ assigned_inbox_id: string | null }>(
+      db,
+      `SELECT assigned_inbox_id FROM outlook_accounts WHERE email = 'midclaim@outlook.com'`,
+    );
+    expect(account?.assigned_inbox_id).toBe('being-written');
+  });
+
+  it('purges SRP auth sessions once they are a day past their expiry', async () => {
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO icloud_auth_sessions (id, account_id, status, expires_at)
+       VALUES ('sess-old', 'acc', 'failed', datetime('now', '-2 days')),
+              ('sess-recent', 'acc', 'failed', datetime('now', '-1 hour')),
+              ('sess-live', 'acc', 'pending_mfa', datetime('now', '+4 minutes'))`,
+    ).run();
+
+    await cleanupExpired();
+
+    // The recent failure stays readable for post-mortem; only the day-old row
+    // is pure accumulation in a table nothing ever deleted from.
+    const ids = db.prepare(`SELECT id FROM icloud_auth_sessions ORDER BY id`).all() as { id: string }[];
+    expect(ids.map((r) => r.id)).toEqual(['sess-live', 'sess-recent']);
+  });
 });
 
 describe('daily Outlook token check safety', () => {

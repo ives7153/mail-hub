@@ -13,7 +13,7 @@ Multi-provider temporary email aggregation — unified API across 10+ email prov
 - **Smart Dispatch** — auto-selects best provider by trust level, rate limits, and blocked domains
 - **Custom Providers** — add REST or GraphQL providers via Web UI, zero coding
 - **Code Extraction** — auto-detect numeric, alphanumeric, and link-type verification codes
-- **Pool Management** — Outlook / YYDS Mail / IMAP domain email at scale
+- **Pool Management** — Outlook / YYDS Mail / IMAP domain email / iCloud aliases at scale
 - **Access Control** — API keys with admin/user tiers and daily quotas
 - **Gmail Alias Generator** — dot-trick / +suffix / googlemail.com variants
 - **Web Admin Panel** — dashboard, provider config, block table, system settings (Chinese/English)
@@ -106,6 +106,7 @@ These are built into the code (not templates). Configurable via the **Provider M
 | Outlook | Account Pool | Import Outlook accounts, complete missing authorization, 1:1 assignment, returned to pool on close; optional `+` sub-address alias; the account page can read the whole mailbox, grouped by lease |
 | YYDS Mail | API Key Pool | Import keys, round-robin rotation, 20,000 calls/day per key |
 | IMAP Domain Email | Account Pool | Connect your own domain via IMAP with catch-all; one mailbox backs many inboxes, with name-shaped generated addresses; highest trust level |
+| iCloud Aliases | Address pool | Mints `@icloud.com` addresses through iCloud+ Hide My Email; they forward to your own mailbox and are sorted by recipient. Addresses are recycled, and a background task tops the pool up within Apple's rate limit |
 
 ## Custom Providers
 
@@ -146,6 +147,13 @@ curl -X POST http://localhost:3100/api/inbox \
   -H "Authorization: Bearer YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{"for": "twitter.com", "alias": true}'
+
+# With multiple Apple IDs, choose which one mints the address (iCloud only)
+# Omit account to use the least-used address across all available accounts
+curl -X POST http://localhost:3100/api/inbox \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"for": "twitter.com", "provider": "icloud", "account": "me@icloud.com"}'
 
 # Get messages
 curl http://localhost:3100/api/inbox/{id}/messages \
