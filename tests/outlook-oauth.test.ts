@@ -2,6 +2,30 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getDb, getRow, setSetting } from '../src/db.js';
 import { app, jsonHeaders } from './helpers/http.js';
 
+const oauthImapState = vi.hoisted(() => ({
+  constructorOptions: [] as Array<Record<string, any>>,
+  locks: [] as Array<{ path: string; options?: Record<string, unknown>; released: boolean }>,
+}));
+
+vi.mock('imapflow', () => {
+  class FakeImapFlow {
+    constructor(options: Record<string, any>) {
+      oauthImapState.constructorOptions.push(options);
+    }
+    async connect(): Promise<void> {}
+    once(): void {}
+    close(): void {}
+    async logout(): Promise<void> {}
+    async getMailboxLock(path: string, options?: Record<string, unknown>): Promise<{ release(): void }> {
+      const lock = { path, options, released: false };
+      oauthImapState.locks.push(lock);
+      return { release: () => { lock.released = true; } };
+    }
+    async search(): Promise<number[]> { return []; }
+  }
+  return { ImapFlow: FakeImapFlow };
+});
+
 const THUNDERBIRD_CLIENT_ID = '9e5f94bc-e8a4-4e73-b8be-63364c29d753';
 const THUNDERBIRD_REDIRECT_URI = 'https://localhost';
 const THUNDERBIRD_SCOPES = [
@@ -63,6 +87,8 @@ async function startThunderbirdOAuth(email = 'bare@outlook.com'): Promise<OAuthS
 afterEach(() => {
   vi.unstubAllGlobals();
   setSetting('proxy_url', '');
+  oauthImapState.constructorOptions = [];
+  oauthImapState.locks = [];
 });
 
 describe('Outlook OAuth completion', () => {
@@ -308,7 +334,7 @@ describe('Outlook OAuth completion', () => {
     });
   });
 
-  it('exchanges a Thunderbird finalUrl through /oauth/code and validates via Outlook fallback', async () => {
+  it('exchanges a Thunderbird finalUrl through /oauth/code and validates via IMAP XOAUTH2', async () => {
     insertBareAccount();
     const start = await startThunderbirdOAuth();
     const state = new URL(start.authorizeUrl).searchParams.get('state');
@@ -332,11 +358,8 @@ describe('Outlook OAuth completion', () => {
       if (url.includes('graph.microsoft.com')) {
         return new Response('{}', { status: 401 });
       }
-      if (url.includes('outlook.office.com')) {
-        return new Response(JSON.stringify({ value: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+      if (url.includes('outlook.office.com/api/')) {
+        return new Response('{}', { status: 401 });
       }
       return new Response('{}', { status: 404 });
     }));
@@ -364,8 +387,17 @@ describe('Outlook OAuth completion', () => {
       client_id: THUNDERBIRD_CLIENT_ID,
       refresh_token: 'refresh-from-code',
       token_status: 'valid',
-      api_type: 'outlook',
+      api_type: 'imap',
     });
+    expect(oauthImapState.constructorOptions[0]?.auth).toEqual({
+      user: 'bare@outlook.com',
+      accessToken: 'access-from-refresh',
+    });
+    expect(oauthImapState.locks).toEqual([{
+      path: 'INBOX',
+      options: { readOnly: true },
+      released: true,
+    }]);
   });
 
   it('rejects /oauth/code state mismatches without deleting the account', async () => {

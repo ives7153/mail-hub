@@ -103,7 +103,7 @@ pm2 start ecosystem.config.cjs
 
 | 渠道 | 类型 | 说明 |
 |------|------|------|
-| Outlook | 账号池 | 导入 Outlook 账号，支持裸账号授权补全；1:1 分配，关闭后回池；可选 `+` 子地址别名；账号页可查看整个邮箱并按租期分段 |
+| Outlook | 账号池 | 导入 Outlook 账号，自动识别 Microsoft Graph、Outlook REST 与 IMAP XOAUTH2（含 Thunderbird 公共 OAuth 令牌）；支持裸账号授权补全；1:1 分配，关闭后回池；可选 `+` 子地址别名；账号页可查看整个邮箱并按租期分段 |
 | YYDS Mail | API Key 池 | 导入 Key，按 key 轮转，单 Key 每日 20,000 次调用 |
 | IMAP 域名邮箱 | 账号池 | 连接自有域名邮箱（catch-all），一个邮箱支撑多个收件箱；生成人名形态地址，信任度最高 |
 | iCloud 别名 | 地址池 | 用 iCloud+ 的隐藏邮件地址签发 `@icloud.com` 地址，转发到你自己的信箱后按收件人分拣；地址回收复用，后台按 Apple 的限速自动补货 |

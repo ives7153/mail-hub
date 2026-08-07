@@ -10,17 +10,21 @@ const log = createLogger('imap-core');
  * Everything a pooled IMAP connection needs, decoupled from any one table.
  *
  * `poolKey` is supplied by the caller rather than derived from an id: two
- * providers share this module's pool, and `imap_accounts.id` and
- * `icloud_accounts.id` would otherwise occupy the same key space. Callers
- * namespace it — `imap:${id}`, `icloud:${id}`.
+ * providers share this module's pool, and their account identifiers would
+ * otherwise occupy the same key space. Callers namespace it — for example
+ * `imap:${id}`, `icloud:${id}`, or `outlook:${email}`.
  */
 export interface ImapCreds {
   poolKey: string;
   host: string;
   port: number;
   user: string;
-  password: string;
+  password?: string;
+  accessToken?: string;
   tls: boolean;
+  proxy?: string;
+  connectionTimeout?: number;
+  socketTimeout?: number;
 }
 
 // A busy catch-all mailbox can match hundreds of UIDs; poll only the newest.
@@ -31,11 +35,21 @@ async function connect(creds: ImapCreds): Promise<ImapFlow> {
     host: creds.host,
     port: creds.port,
     secure: creds.tls,
-    auth: { user: creds.user, pass: creds.password },
+    auth: creds.accessToken
+      ? { user: creds.user, accessToken: creds.accessToken }
+      : { user: creds.user, pass: creds.password },
+    ...(creds.proxy ? { proxy: creds.proxy } : {}),
+    ...(creds.connectionTimeout ? { connectionTimeout: creds.connectionTimeout } : {}),
+    ...(creds.socketTimeout ? { socketTimeout: creds.socketTimeout } : {}),
     logger: false,
   });
-  await client.connect();
-  return client;
+  try {
+    await client.connect();
+    return client;
+  } catch (e) {
+    client.close();
+    throw e;
+  }
 }
 
 /** The subset of imapflow's BODYSTRUCTURE tree this module needs. */
@@ -107,7 +121,17 @@ const IDLE_MS = 5 * 60 * 1000;
 
 function credentialFingerprint(creds: ImapCreds): string {
   return createHash('sha256')
-    .update(JSON.stringify([creds.host, creds.port, creds.user, creds.password, creds.tls]))
+    .update(JSON.stringify([
+      creds.host,
+      creds.port,
+      creds.user,
+      creds.password,
+      creds.accessToken,
+      creds.tls,
+      creds.proxy,
+      creds.connectionTimeout,
+      creds.socketTimeout,
+    ]))
     .digest('hex');
 }
 
@@ -120,7 +144,7 @@ export function evictClient(poolKey: string, entry?: PoolEntry): void {
   clearTimeout(current.timer);
   pool.delete(poolKey);
   current.clientPromise
-    .then((client) => client.logout())
+    .then((client) => client.logout().catch(() => client.close()))
     .catch((error: unknown) => {
       logIgnoredError(log, 'IMAP pooled client logout failed', error, { poolKey });
     });
@@ -192,12 +216,12 @@ function addressedTo(
 export async function fetchMessagesBySearch(
   creds: ImapCreds,
   criteria: SearchObject,
-  opts: { limit?: number; recipient?: string; strictRecipient?: boolean } = {},
+  opts: { limit?: number; recipient?: string; strictRecipient?: boolean; mailbox?: string } = {},
 ): Promise<Message[]> {
   const limit = opts.limit ?? POLL_FETCH_LIMIT;
   const { client, entry } = await acquire(creds);
   try {
-    const lock = await client.getMailboxLock('INBOX');
+    const lock = await client.getMailboxLock(opts.mailbox ?? 'INBOX', { readOnly: true });
     try {
       const uids = await client.search(criteria, { uid: true });
       if (!uids || uids.length === 0) return [];
@@ -240,11 +264,11 @@ export async function fetchMessagesBySearch(
 export async function fetchMessageDetail(
   creds: ImapCreds,
   uid: string,
-  opts: { recipient?: string; strictRecipient?: boolean } = {},
+  opts: { recipient?: string; strictRecipient?: boolean; mailbox?: string } = {},
 ): Promise<MessageDetail> {
   const { client, entry } = await acquire(creds);
   try {
-    const lock = await client.getMailboxLock('INBOX');
+    const lock = await client.getMailboxLock(opts.mailbox ?? 'INBOX', { readOnly: true });
     try {
       const fetched = await client.fetchOne(uid, {
         uid: true,
@@ -351,21 +375,40 @@ export function describeImapError(error: unknown): string {
   return e.authenticationFailed ? `authentication rejected: ${described}` : described;
 }
 
-export async function testConnection(creds: ImapCreds): Promise<{ ok: boolean; error?: string }> {
-  let client: ImapFlow;
+export function isImapAuthenticationError(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { authenticationFailed?: unknown }).authenticationFailed === true);
+}
+
+export async function findMailboxBySpecialUse(creds: ImapCreds, specialUse: string): Promise<string | undefined> {
+  const { client, entry } = await acquire(creds);
   try {
-    client = await connect(creds);
+    const mailboxes = await client.list();
+    return mailboxes.find((mailbox) => mailbox.specialUse?.toLowerCase() === specialUse.toLowerCase())?.path;
   } catch (e) {
-    return { ok: false, error: describeImapError(e) };
+    evictClient(creds.poolKey, entry);
+    throw e;
   }
+}
+
+export async function assertMailboxReadable(creds: ImapCreds, mailbox = 'INBOX'): Promise<void> {
+  const client = await connect(creds);
   try {
-    await client.mailboxOpen('INBOX');
+    const lock = await client.getMailboxLock(mailbox, { readOnly: true });
+    try {
+      await client.search({ all: true }, { uid: true });
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await client.logout().catch(() => client.close());
+  }
+}
+
+export async function testConnection(creds: ImapCreds): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertMailboxReadable(creds);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: describeImapError(e) };
-  } finally {
-    await client.logout().catch((error: unknown) => {
-      logIgnoredError(log, 'IMAP test logout failed', error, { poolKey: creds.poolKey });
-    });
   }
 }

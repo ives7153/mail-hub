@@ -34,7 +34,7 @@ Response 200:
 ```json
 {
   "status": "ok",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "startedAt": "2025-01-01T00:00:00Z",
   "uptime": 3600,
   "db": "connected"
@@ -889,14 +889,24 @@ Omit to check all accounts.
 ```json
 {
   "checked": 10,
-  "valid": 8,
-  "invalid": 2,
+  "valid": 7,
+  "invalid": 1,
+  "unknown": 2,
   "results": [
-    { "email": "user@outlook.com", "valid": true },
-    { "email": "bad@outlook.com", "valid": false }
+    { "email": "imap-user@outlook.com", "valid": true, "status": "valid", "apiType": "imap" },
+    { "email": "graph-user@outlook.com", "valid": true, "status": "valid", "apiType": "graph" },
+    { "email": "bad@outlook.com", "valid": false, "status": "invalid", "apiType": "" },
+    { "email": "temporarily-unreachable@outlook.com", "valid": false, "status": "unknown" }
   ]
 }
 ```
+
+`apiType` is the detected mailbox transport: `graph`, `outlook`, or `imap`.
+Unknown accounts are capability-probed without inferring the transport from the
+refresh-token or access-token format. A known `imap` account is checked through
+IMAP first. Deterministic OAuth/authentication rejection is `invalid`; network,
+proxy, throttling, 5xx, and temporary IMAP failures are `unknown` and do not
+invalidate the stored account.
 
 ### POST /api/outlook/renew — Renew Tokens
 
@@ -905,19 +915,26 @@ Omit to check all accounts.
 **Response 200**:
 ```json
 {
-  "total": 10,
-  "renewed": 9,
-  "failed": 1,
+  "total": 3,
+  "renewed": 1,
+  "failed": 2,
   "results": [
-    { "email": "user@outlook.com", "renewed": true },
-    { "email": "bad@outlook.com", "renewed": false }
+    { "email": "imap-user@outlook.com", "renewed": true, "status": "renewed", "apiType": "imap" },
+    { "email": "graph-user@outlook.com", "renewed": false, "status": "not_rotated", "apiType": "graph" },
+    { "email": "temporarily-unreachable@outlook.com", "renewed": false, "status": "unknown" }
   ]
 }
 ```
 
+A token-endpoint `200` is not enough to report the mailbox usable. The renewed
+access token is capability-checked against the actual mailbox transports and
+the detected `apiType` is persisted. `not_rotated` means the refresh token was
+accepted and the mailbox capability was validated, but Microsoft did not issue
+a replacement refresh token. Infrastructure failures remain `unknown`.
+
 ### POST /api/outlook/oauth/start — Start Authorization Completion
 
-Creates an authorization session for a pending account and returns an authorize URL. The default preset is the built-in public-client flow; `custom` keeps compatibility with user-provided OAuth app settings.
+Creates an authorization session for a pending account and returns an authorize URL. The default preset is the built-in Thunderbird public-client flow; `custom` keeps compatibility with user-provided OAuth app settings. After code exchange, Mail Hub validates real mailbox-read capability before finalizing the account. Thunderbird's IMAP-scoped token therefore completes as `token_status=valid` with `api_type=imap` even when Graph and Outlook REST reject it.
 
 **Request** (JSON):
 ```json
@@ -1551,7 +1568,7 @@ Mounted under `/api/admin`.
 **Response 200**:
 ```json
 {
-  "version": "0.10.1",
+  "version": "0.10.2",
   "uptime": 3600,
   "dbPath": "/app/data/mail.db",
   "dbSize": "1.2 MB",
@@ -1567,8 +1584,8 @@ Queries the Mail Hub GitHub repository for the highest stable `vX.Y.Z` tag and c
 **Response 200**:
 ```json
 {
-  "currentVersion": "0.10.1",
-  "latestVersion": "0.10.2",
+  "currentVersion": "0.10.2",
+  "latestVersion": "0.10.3",
   "updateAvailable": true,
   "checkedAt": "2026-07-17T00:00:00.000Z",
   "source": "github-api"

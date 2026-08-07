@@ -648,13 +648,19 @@ export async function cleanupExpired(): Promise<void> {
       let unknownCount = 0;
       await runConcurrent(toCheck, concurrency, async ({ email, client_id: clientId, refresh_token: refreshToken }) => {
         try {
-          const { status } = await checkToken(email, clientId, refreshToken);
+          const { status, apiType } = await checkToken(email, clientId, refreshToken);
           if (status === 'unknown') {
             unknownCount++;
             db.prepare(`UPDATE outlook_accounts SET last_checked_at = datetime('now') WHERE email = ?`).run(email);
           } else {
             if (status === 'invalid') invalidCount++;
-            db.prepare(`UPDATE outlook_accounts SET token_status = ?, last_checked_at = datetime('now') WHERE email = ?`).run(status, email);
+            if (status === 'valid' && apiType) {
+              db.prepare(
+                `UPDATE outlook_accounts SET token_status = ?, api_type = ?, last_checked_at = datetime('now') WHERE email = ?`,
+              ).run(status, apiType, email);
+            } else {
+              db.prepare(`UPDATE outlook_accounts SET token_status = ?, last_checked_at = datetime('now') WHERE email = ?`).run(status, email);
+            }
           }
         } catch (e) {
           unknownCount++;

@@ -51,6 +51,49 @@ describe('Outlook REST (PascalCase) message polling', () => {
     expect(messages[0].subject).toBe('Inbox Two');
     expect(messages[0].from).toBe('B <b@x.com>');
   });
+
+  it.each([401, 503])('discovers REST for an unknown account after Graph returns %s', async (graphStatus) => {
+    const email = `rest-fallback-${graphStatus}@outlook.com`;
+    const db = getDb();
+    db.prepare(
+      `INSERT INTO outlook_accounts (email, password, client_id, refresh_token, api_type)
+       VALUES (?, 'pw', 'cid-rest-fallback', ?, '')`,
+    ).run(email, `rt-rest-fallback-${graphStatus}`);
+
+    const mailUrls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/oauth2/v2.0/token')) {
+        return new Response(JSON.stringify({ access_token: `at-rest-fallback-${graphStatus}` }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      mailUrls.push(target);
+      if (target.includes('graph.microsoft.com')) return new Response('{}', { status: graphStatus });
+      if (target.includes('outlook.office.com/api/')) {
+        return new Response(JSON.stringify({ value: target.includes('/inbox/')
+          ? [{ Id: `rest-${graphStatus}`, Subject: 'REST fallback', ReceivedDateTime: '2026-08-07T10:00:00Z' }]
+          : [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 404 });
+    }));
+
+    const messages = await new OutlookProvider().getMessages({
+      address: email,
+      authData: { email, password: 'pw', clientId: 'cid-rest-fallback', refreshToken: `rt-rest-fallback-${graphStatus}` },
+      provider: 'outlook',
+      apiBase: '',
+    });
+
+    expect(messages.map((message) => message.id)).toEqual([`rest-${graphStatus}`]);
+    expect(mailUrls.some((url) => url.includes('graph.microsoft.com'))).toBe(true);
+    expect(mailUrls.some((url) => url.includes('outlook.office.com/api/'))).toBe(true);
+    expect(db.prepare(`SELECT api_type FROM outlook_accounts WHERE email = ?`).get(email)).toEqual({ api_type: 'outlook' });
+  });
 });
 
 /**

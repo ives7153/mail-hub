@@ -1,18 +1,22 @@
 import { createHash, randomUUID } from 'crypto';
 import { BaseProvider, PROVIDER, type InboxData, type Message, type MessageDetail, type ProviderMeta } from './base.js';
-import { allRows, getDb, getRow } from '../db.js';
-import { createConnection } from 'net';
+import { allRows, getDb, getRow, getSetting } from '../db.js';
 import { fetchWithTimeout, formatSender, randomString } from '../utils.js';
 import { errorMessage, UpstreamHttpError } from '../errors.js';
+import { config } from '../config.js';
+import { isImapAuthenticationError } from './imap-core.js';
+import {
+  checkOutlookImap,
+  fetchOutlookImapMessage,
+  fetchOutlookImapMessages,
+  outlookImapCreds,
+} from './outlook-imap.js';
 
 const OAUTH2_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
 const GRAPH_INBOX_URL = 'https://graph.microsoft.com/v1.0/me/mailFolders/Inbox/messages';
 const GRAPH_JUNK_URL = 'https://graph.microsoft.com/v1.0/me/mailFolders/junkemail/messages';
 const OUTLOOK_INBOX_URL = 'https://outlook.office.com/api/v2.0/me/mailfolders/inbox/messages';
 const OUTLOOK_JUNK_URL = 'https://outlook.office.com/api/v2.0/me/mailfolders/junkemail/messages';
-const IMAP_HOST = 'outlook.office365.com';
-const IMAP_PORT = 993;
-
 const TOKEN_TTL = 55 * 60 * 1000;
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
@@ -28,6 +32,7 @@ interface GraphMessage {
 interface OAuthResponse {
   access_token?: string;
   refresh_token?: string;
+  expires_in?: number;
   error?: string;
   error_description?: string;
 }
@@ -44,7 +49,26 @@ export class OAuthRejectedError extends Error {
   }
 }
 
+class MailApiRejectedError extends Error {
+  constructor(readonly apiType: Exclude<OutlookApiType, 'imap'>, readonly status: number) {
+    super(`${apiType} mail API rejected access token`);
+    this.name = 'MailApiRejectedError';
+  }
+}
+
 export type TokenCheckStatus = 'valid' | 'invalid' | 'unknown';
+export type OutlookApiType = 'graph' | 'outlook' | 'imap';
+
+function normalizeApiType(value: string): OutlookApiType | '' {
+  switch (value) {
+    case 'graph':
+    case 'outlook':
+    case 'imap':
+      return value;
+    default:
+      return '';
+  }
+}
 
 interface CountRow { c: number }
 
@@ -120,8 +144,11 @@ function getCachedToken(clientId: string, refreshToken: string): string | null {
   return null;
 }
 
-function setCachedToken(clientId: string, refreshToken: string, token: string): void {
-  tokenCache.set(cacheKey(clientId, refreshToken), { token, expiresAt: Date.now() + TOKEN_TTL });
+function setCachedToken(clientId: string, refreshToken: string, token: string, expiresIn?: number): void {
+  const ttl = Number.isFinite(expiresIn) && expiresIn! > 0
+    ? Math.max(60_000, expiresIn! * 1000 - 60_000)
+    : TOKEN_TTL;
+  tokenCache.set(cacheKey(clientId, refreshToken), { token, expiresAt: Date.now() + ttl });
 }
 
 export function evictCachedToken(clientId: string, refreshToken: string): void {
@@ -133,7 +160,7 @@ export function resetTokenCache(): void {
   tokenCache.clear();
 }
 
-async function fetchOAuthToken(clientId: string, refreshToken: string): Promise<{ accessToken: string; newRefreshToken?: string }> {
+async function fetchOAuthToken(clientId: string, refreshToken: string): Promise<{ accessToken: string; newRefreshToken?: string; expiresIn?: number }> {
   const body = new URLSearchParams({
     client_id: clientId,
     refresh_token: refreshToken,
@@ -154,15 +181,24 @@ async function fetchOAuthToken(clientId: string, refreshToken: string): Promise<
     }
     throw new UpstreamHttpError(`OAuth token endpoint error: ${detail}`, res.status, res.headers.get('Retry-After'));
   }
-  if (!data.access_token) throw new OAuthRejectedError('OAuth response missing access_token');
-  return { accessToken: data.access_token, newRefreshToken: data.refresh_token };
+  if (!data.access_token) throw new Error('OAuth response missing access_token');
+  return { accessToken: data.access_token, newRefreshToken: data.refresh_token, expiresIn: data.expires_in };
 }
 
-async function obtainAccessToken(clientId: string, refreshToken: string): Promise<string> {
+async function obtainAccessToken(email: string, clientId: string, refreshToken: string): Promise<string> {
   const cached = getCachedToken(clientId, refreshToken);
   if (cached) return cached;
   const result = await fetchOAuthToken(clientId, refreshToken);
-  setCachedToken(clientId, refreshToken, result.accessToken);
+  const effectiveRefreshToken = result.newRefreshToken || refreshToken;
+  if (result.newRefreshToken) {
+    getDb().prepare(
+      `UPDATE outlook_accounts
+       SET refresh_token = ?, token_renewed_at = datetime('now')
+       WHERE email = ? AND refresh_token = ?`,
+    ).run(result.newRefreshToken, email, refreshToken);
+    evictCachedToken(clientId, refreshToken);
+  }
+  setCachedToken(clientId, effectiveRefreshToken, result.accessToken, result.expiresIn);
   return result.accessToken;
 }
 
@@ -175,15 +211,16 @@ async function fetchMailsGraph(accessToken: string, folderUrl: string, count = 2
   const res = await fetchWithTimeout(`${folderUrl}?${params}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (res.status === 401) throw new Error('API 401');
-  if (!res.ok) return [];
+  const apiType = folderUrl.startsWith('https://graph.microsoft.com') ? 'graph' : 'outlook';
+  if (res.status === 401 || res.status === 403) throw new MailApiRejectedError(apiType, res.status);
+  if (!res.ok) throw new UpstreamHttpError(`${apiType} mail API error`, res.status, res.headers.get('Retry-After'));
   const data = await res.json() as { value?: GraphMessage[] };
   // Normalize immediately: the Outlook REST API returns PascalCase fields, and
   // downstream dedup/sort must never see un-normalized ids/timestamps.
   return (data.value || []).map(normalizeMessage);
 }
 
-async function fetchMailsBothApis(accessToken: string, apiType: string, count = 20): Promise<{ messages: GraphMessage[]; apiType: string }> {
+async function fetchMailsBothApis(accessToken: string, apiType: OutlookApiType | '', count = 20): Promise<{ messages: GraphMessage[]; apiType: Exclude<OutlookApiType, 'imap'> }> {
   if (apiType === 'outlook') {
     const [inboxMsgs, junkMsgs] = await Promise.all([
       fetchMailsGraph(accessToken, OUTLOOK_INBOX_URL, count),
@@ -198,7 +235,7 @@ async function fetchMailsBothApis(accessToken: string, apiType: string, count = 
     ]);
     return { messages: mergeMessages(inboxMsgs, junkMsgs, count), apiType: 'graph' };
   } catch (e) {
-    if (errorMessage(e).includes('401')) {
+    if (e instanceof MailApiRejectedError || !apiType) {
       const [inboxMsgs, junkMsgs] = await Promise.all([
         fetchMailsGraph(accessToken, OUTLOOK_INBOX_URL, count),
         fetchMailsGraph(accessToken, OUTLOOK_JUNK_URL, count),
@@ -219,7 +256,7 @@ function mergeMessages(inboxMsgs: GraphMessage[], junkMsgs: GraphMessage[], limi
     .slice(0, limit);
 }
 
-async function fetchSingleMessage(accessToken: string, messageId: string, apiType: string): Promise<GraphMessage> {
+async function fetchSingleMessage(accessToken: string, messageId: string, apiType: OutlookApiType | ''): Promise<GraphMessage> {
   const urls = apiType === 'outlook'
     ? [`https://outlook.office.com/api/v2.0/me/messages/${messageId}?$select=id,subject,from,receivedDateTime,body,bodyPreview`]
     : [
@@ -228,8 +265,13 @@ async function fetchSingleMessage(accessToken: string, messageId: string, apiTyp
       ];
   for (const url of urls) {
     const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${accessToken}` } });
-    if (res.status === 401) throw new Error('API 401');
+    if (res.status === 401 || res.status === 403) {
+      throw new MailApiRejectedError(url.startsWith('https://graph.microsoft.com') ? 'graph' : 'outlook', res.status);
+    }
     if (res.ok) return normalizeMessage(await res.json());
+    if (res.status === 429 || res.status >= 500) {
+      throw new UpstreamHttpError('mail detail API error', res.status, res.headers.get('Retry-After'));
+    }
   }
   throw new Error('无法获取邮件详情');
 }
@@ -285,27 +327,56 @@ function accountEmailOf(inbox: InboxData): string {
 }
 
 /**
- * One access-token attempt with a single retry after evicting the cache on 401,
- * which is the only failure a fresh token can fix. Both the inbox path and the
- * account-mailbox path funnel through here so the retry, the api_type probe and
- * its write-back cannot drift apart.
+ * One access-token attempt with a single retry after a mail API rejection or
+ * an IMAP authentication rejection. Both the inbox path and the account-mailbox
+ * path funnel through here so token rotation and retry behavior cannot drift.
  */
-async function withAccessToken<T>(clientId: string, refreshToken: string, run: (token: string) => Promise<T>): Promise<T> {
-  const accessToken = await obtainAccessToken(clientId, refreshToken);
+async function withAccessToken<T>(email: string, clientId: string, refreshToken: string, run: (token: string) => Promise<T>): Promise<T> {
+  let effectiveRefreshToken = getRow<{ refresh_token: string }>(
+    getDb(),
+    `SELECT refresh_token FROM outlook_accounts WHERE email = ?`,
+    email,
+  )?.refresh_token || refreshToken;
+  const accessToken = await obtainAccessToken(email, clientId, effectiveRefreshToken);
+  effectiveRefreshToken = getRow<{ refresh_token: string }>(
+    getDb(),
+    `SELECT refresh_token FROM outlook_accounts WHERE email = ?`,
+    email,
+  )?.refresh_token || effectiveRefreshToken;
   try {
     return await run(accessToken);
   } catch (e) {
-    if (!errorMessage(e).includes('401')) throw e;
-    evictCachedToken(clientId, refreshToken);
-    return run(await obtainAccessToken(clientId, refreshToken));
+    if (!(e instanceof MailApiRejectedError) && !isImapAuthenticationError(e)) throw e;
+    evictCachedToken(clientId, effectiveRefreshToken);
+    effectiveRefreshToken = getRow<{ refresh_token: string }>(
+      getDb(),
+      `SELECT refresh_token FROM outlook_accounts WHERE email = ?`,
+      email,
+    )?.refresh_token || effectiveRefreshToken;
+    return run(await obtainAccessToken(email, clientId, effectiveRefreshToken));
   }
 }
 
 async function pollMailbox(email: string, clientId: string, refreshToken: string, limit: number): Promise<Message[]> {
   const db = getDb();
-  const apiType = getRow<{ api_type: string }>(db, `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
-  return withAccessToken(clientId, refreshToken, async (token) => {
-    const result = await fetchMailsBothApis(token, apiType, limit);
+  const apiType = normalizeApiType(
+    getRow<{ api_type: string }>(db, `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '',
+  );
+  return withAccessToken(email, clientId, refreshToken, async (token) => {
+    if (apiType === 'imap') {
+      return fetchOutlookImapMessages(outlookImapCreds(email, token, getSetting('proxy_url') || config.proxyUrl), limit);
+    }
+    let result: { messages: GraphMessage[]; apiType: Exclude<OutlookApiType, 'imap'> };
+    try {
+      result = await fetchMailsBothApis(token, apiType, limit);
+    } catch (e) {
+      if (apiType) throw e;
+      return fetchOutlookImapMessages(outlookImapCreds(email, token, getSetting('proxy_url') || config.proxyUrl), limit)
+        .then((messages) => {
+          db.prepare(`UPDATE outlook_accounts SET api_type = 'imap' WHERE email = ?`).run(email);
+          return messages;
+        });
+    }
     if (result.apiType && result.apiType !== apiType) {
       db.prepare(`UPDATE outlook_accounts SET api_type = ? WHERE email = ?`).run(result.apiType, email);
     }
@@ -314,8 +385,15 @@ async function pollMailbox(email: string, clientId: string, refreshToken: string
 }
 
 async function readMailboxMessage(email: string, clientId: string, refreshToken: string, messageId: string): Promise<MessageDetail> {
-  const apiType = getRow<{ api_type: string }>(getDb(), `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '';
-  return withAccessToken(clientId, refreshToken, async (token) => graphMsgToDetail(await fetchSingleMessage(token, messageId, apiType)));
+  const apiType = normalizeApiType(
+    getRow<{ api_type: string }>(getDb(), `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '',
+  );
+  if (apiType === 'imap') {
+    return withAccessToken(email, clientId, refreshToken, async (token) => (
+      fetchOutlookImapMessage(outlookImapCreds(email, token, getSetting('proxy_url') || config.proxyUrl), messageId)
+    ));
+  }
+  return withAccessToken(email, clientId, refreshToken, async (token) => graphMsgToDetail(await fetchSingleMessage(token, messageId, apiType)));
 }
 
 function accountCredentials(email: string): { clientId: string; refreshToken: string } {
@@ -335,7 +413,8 @@ function accountCredentials(email: string): { clientId: string; refreshToken: st
  * clipped to the lease window (isMessageWithinInboxLifetime) — that boundary is
  * a tenant boundary and must never be widened. Seeing what else is in the
  * mailbox is a different question, asked of the account, and answerable only to
- * an admin. Bounded by `limit` because Graph pages and we do not.
+ * an admin. Bounded by `limit` because upstream mailbox reads are deliberately
+ * kept finite.
  */
 export async function fetchAccountMailbox(email: string, limit = 50): Promise<Message[]> {
   const { clientId, refreshToken } = accountCredentials(email);
@@ -507,40 +586,77 @@ export class OutlookProvider extends BaseProvider {
 
 /**
  * Never throws. 'invalid' only on a deterministic OAuth rejection or definitive
- * 401/403 from both mail APIs; network errors, throttling and 5xx yield
- * 'unknown' so callers never destroy accounts over an infrastructure blip.
+ * rejection by Graph, Outlook REST, and IMAP; network errors, throttling and 5xx
+ * yield 'unknown' so callers never destroy accounts over an infrastructure blip.
  */
-export async function checkToken(_email: string, clientId: string, refreshToken: string): Promise<{ status: TokenCheckStatus; apiType: string }> {
-  let token: string;
-  try {
-    token = await obtainAccessToken(clientId, refreshToken);
-  } catch (e) {
-    return { status: e instanceof OAuthRejectedError ? 'invalid' : 'unknown', apiType: '' };
+async function checkAccessToken(email: string, token: string): Promise<{ status: TokenCheckStatus; apiType: OutlookApiType | '' }> {
+  const storedType = normalizeApiType(
+    getRow<{ api_type: string }>(getDb(), `SELECT api_type FROM outlook_accounts WHERE email = ?`, email)?.api_type || '',
+  );
+  const httpProbes = storedType === 'outlook'
+    ? [[OUTLOOK_INBOX_URL, 'outlook'], [GRAPH_INBOX_URL, 'graph']] as const
+    : [[GRAPH_INBOX_URL, 'graph'], [OUTLOOK_INBOX_URL, 'outlook']] as const;
+  const probes: Array<{ apiType: OutlookApiType; url?: string }> = [
+    ...httpProbes.map(([url, apiType]) => ({ url, apiType })),
+    { apiType: 'imap' },
+  ];
+  if (storedType === 'imap') {
+    probes.unshift(probes.pop()!);
   }
 
   let inconclusive = false;
-  for (const [url, apiType] of [[GRAPH_INBOX_URL, 'graph'], [OUTLOOK_INBOX_URL, 'outlook']] as const) {
+  for (const probe of probes) {
     try {
-      const res = await fetchWithTimeout(`${url}?$top=1`, {
+      if (probe.apiType === 'imap') {
+        await checkOutlookImap(outlookImapCreds(email, token, getSetting('proxy_url') || config.proxyUrl));
+        return { status: 'valid', apiType: 'imap' };
+      }
+      const res = await fetchWithTimeout(`${probe.url}?$top=1`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) return { status: 'valid', apiType };
+      if (res.ok) return { status: 'valid', apiType: probe.apiType };
       if (res.status !== 401 && res.status !== 403) inconclusive = true;
-    } catch {
-      inconclusive = true;
+    } catch (e) {
+      if (probe.apiType !== 'imap' || !isImapAuthenticationError(e)) inconclusive = true;
     }
   }
   return { status: inconclusive ? 'unknown' : 'invalid', apiType: '' };
 }
 
+export async function checkToken(
+  email: string,
+  clientId: string,
+  refreshToken: string,
+  accessToken?: string,
+): Promise<{ status: TokenCheckStatus; apiType: OutlookApiType | '' }> {
+  if (accessToken) return checkAccessToken(email, accessToken);
+
+  const cachedToken = getCachedToken(clientId, refreshToken);
+  if (cachedToken) {
+    const cachedCapability = await checkAccessToken(email, cachedToken);
+    if (cachedCapability.status !== 'invalid') return cachedCapability;
+    evictCachedToken(clientId, refreshToken);
+  }
+
+  let token: string;
+  try {
+    token = await obtainAccessToken(email, clientId, refreshToken);
+  } catch (e) {
+    return { status: e instanceof OAuthRejectedError ? 'invalid' : 'unknown', apiType: '' };
+  }
+  return checkAccessToken(email, token);
+}
+
 /**
- * Returns the rotated credentials, or null when the endpoint accepted the token
- * but did not rotate it. Throws OAuthRejectedError on deterministic rejection
- * and UpstreamHttpError/network errors on infrastructure failure — callers
- * must only mark accounts invalid on OAuthRejectedError.
+ * Returns the usable access token and an optional rotated refresh token.
+ * Throws OAuthRejectedError on deterministic rejection and
+ * UpstreamHttpError/network errors on infrastructure failure — callers must
+ * only mark accounts invalid on OAuthRejectedError.
  */
-export async function renewToken(clientId: string, refreshToken: string): Promise<{ newRefreshToken: string; accessToken: string } | null> {
+export async function renewToken(clientId: string, refreshToken: string): Promise<{ newRefreshToken?: string; accessToken: string }> {
   const result = await fetchOAuthToken(clientId, refreshToken);
-  if (!result.newRefreshToken) return null;
+  const effectiveRefreshToken = result.newRefreshToken || refreshToken;
+  if (result.newRefreshToken) evictCachedToken(clientId, refreshToken);
+  setCachedToken(clientId, effectiveRefreshToken, result.accessToken, result.expiresIn);
   return { newRefreshToken: result.newRefreshToken, accessToken: result.accessToken };
 }

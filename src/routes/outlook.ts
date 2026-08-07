@@ -886,14 +886,34 @@ outlookRoutes.post('/outlook/renew', async (c) => {
   const checked = await runConcurrent(withToken, concurrency, async (row) => {
     try {
       const result = await renewToken(row.client_id, row.refresh_token);
-      if (result) {
+      const effectiveRefreshToken = result.newRefreshToken || row.refresh_token;
+      if (result.newRefreshToken) {
         db.prepare(
-          `UPDATE outlook_accounts SET refresh_token = ?, token_status = 'valid', token_renewed_at = datetime('now') WHERE email = ?`,
-        ).run(result.newRefreshToken, row.email);
-        return { email: row.email, renewed: true, status: 'renewed' };
+          `UPDATE outlook_accounts SET refresh_token = ?, token_renewed_at = datetime('now') WHERE email = ? AND refresh_token = ?`,
+        ).run(result.newRefreshToken, row.email, row.refresh_token);
       }
-      // Endpoint accepted the token but did not rotate it — still a live token.
-      return { email: row.email, renewed: false, status: 'not_rotated' };
+      const capability = await checkToken(row.email, row.client_id, effectiveRefreshToken, result.accessToken);
+      if (capability.status === 'valid') {
+        db.prepare(
+          `UPDATE outlook_accounts SET token_status = 'valid', api_type = ?, last_checked_at = datetime('now') WHERE email = ?`,
+        ).run(capability.apiType, row.email);
+        return {
+          email: row.email,
+          renewed: Boolean(result.newRefreshToken),
+          status: result.newRefreshToken ? 'renewed' : 'not_rotated',
+          apiType: capability.apiType,
+        };
+      }
+      if (capability.status === 'invalid') {
+        db.prepare(`UPDATE outlook_accounts SET token_status = 'invalid', last_checked_at = datetime('now') WHERE email = ?`).run(row.email);
+      } else {
+        db.prepare(`UPDATE outlook_accounts SET last_checked_at = datetime('now') WHERE email = ?`).run(row.email);
+      }
+      return {
+        email: row.email,
+        renewed: Boolean(result.newRefreshToken),
+        status: capability.status,
+      };
     } catch (e) {
       if (e instanceof OAuthRejectedError) {
         db.prepare(`UPDATE outlook_accounts SET token_status = 'invalid' WHERE email = ?`).run(row.email);

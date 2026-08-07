@@ -132,6 +132,34 @@ describe('expired inbox cleanup', () => {
 });
 
 describe('daily Outlook token check safety', () => {
+  it('persists the transport discovered during the daily capability check', async () => {
+    insertShortAccount('rest-detected@outlook.com', 'rt-rest-detected');
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const target = String(url);
+      if (target.includes('/oauth2/v2.0/token')) {
+        return new Response(JSON.stringify({ access_token: 'access-rest-detected' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (target.includes('graph.microsoft.com')) return new Response('{}', { status: 401 });
+      if (target.includes('outlook.office.com/api/')) {
+        return new Response(JSON.stringify({ value: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response('{}', { status: 404 });
+    }));
+
+    await cleanupExpired();
+
+    expect(getRow<{ token_status: string; api_type: string }>(
+      getDb(),
+      `SELECT token_status, api_type FROM outlook_accounts WHERE email = 'rest-detected@outlook.com'`,
+    )).toEqual({ token_status: 'valid', api_type: 'outlook' });
+  });
+
   it('keeps accounts when the token endpoint fails with 5xx', async () => {
     insertShortAccount('a5xx@outlook.com', 'rt-5xx-unique');
     vi.stubGlobal('fetch', vi.fn(async () => new Response('busy', { status: 503 })));
