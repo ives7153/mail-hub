@@ -47,6 +47,8 @@ beforeEach(() => {
     'block_rules',
     'activity_log',
     'template_providers',
+    'mailbox_registry',
+    'mailbox_registrations',
   ]) {
     db.prepare(`DELETE FROM ${table}`).run();
   }

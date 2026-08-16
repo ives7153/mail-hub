@@ -21,6 +21,7 @@ import { checkToken } from './providers/outlook.js';
 import { reapOrphanedAddresses } from './providers/icloud.js';
 import { createLogger } from './logger.js';
 import { settingsRoutes } from './routes/settings.js';
+import { accountsRoutes } from './routes/accounts.js';
 import { runConcurrent, todayDateString } from './utils.js';
 import { APP_VERSION } from './version.js';
 import { errorMessage, httpStatus, jsonStatus } from './errors.js';
@@ -530,6 +531,7 @@ export function createApp(): Hono<AdminEnv> {
   app.route('/api', serviceRoutes);
   app.route('/api', templateProviderRoutes);
   app.route('/api', settingsRoutes);
+  app.route('/api', accountsRoutes);
 
   app.get('/api/activity', requireAdmin, (c) => {
     const db = getDb();

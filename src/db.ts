@@ -241,6 +241,34 @@ CREATE TABLE IF NOT EXISTS icloud_auth_sessions (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Manually added mailbox entries (non-pool addresses like Gmail/QQ).
+-- Pool addresses (outlook/imap/icloud) are NOT persisted here — they are
+-- surfaced by UNION with their own tables, so deleting a pool account never
+-- leaves a stale row behind.
+CREATE TABLE IF NOT EXISTS mailbox_registry (
+  email      TEXT PRIMARY KEY,
+  source     TEXT NOT NULL DEFAULT 'manual',
+  remark     TEXT NOT NULL DEFAULT '',
+  tags       TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Applications/accounts registered with an email address. Linked by the email
+-- string so both pool and manual mailboxes can hold registrations without a
+-- cross-table foreign key.
+CREATE TABLE IF NOT EXISTS mailbox_registrations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  email      TEXT NOT NULL,
+  app_name   TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  password   TEXT NOT NULL DEFAULT '',
+  label      TEXT NOT NULL DEFAULT '',
+  memo       TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 export function initDb(): Database.Database {
@@ -307,6 +335,7 @@ export function initDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_outlook_oauth_email ON outlook_oauth_sessions(email);
     CREATE INDEX IF NOT EXISTS idx_outlook_oauth_state ON outlook_oauth_sessions(state_hash);
     CREATE INDEX IF NOT EXISTS idx_outlook_oauth_status ON outlook_oauth_sessions(status);
+    CREATE INDEX IF NOT EXISTS idx_mailbox_regs_email ON mailbox_registrations(email);
   `);
 
   seedServiceStats(db);
