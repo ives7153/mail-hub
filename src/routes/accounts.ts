@@ -21,7 +21,6 @@ type RegistrationRow = {
   app_name: string;
   username: string;
   password: string;
-  label: string;
   memo: string;
   created_at: string;
   updated_at: string;
@@ -148,9 +147,9 @@ accountsRoutes.get('/admin/accounts/registrations', (c) => {
   const params: string[] = [];
   if (email) { where.push('LOWER(email) = ?'); params.push(email); }
   if (keyword) {
-    where.push('(app_name LIKE ? OR username LIKE ? OR label LIKE ? OR memo LIKE ?)');
+    where.push('(app_name LIKE ? OR username LIKE ? OR memo LIKE ?)');
     const like = `%${keyword}%`;
-    params.push(like, like, like, like);
+    params.push(like, like, like);
   }
   if (where.length) sql += ` WHERE ${where.join(' AND ')}`;
   sql += ` ORDER BY app_name`;
@@ -169,14 +168,13 @@ accountsRoutes.post('/admin/accounts/emails/:email/registrations', async (c) => 
   if (!emailExists(db, email)) return c.json({ error: 'Mailbox not found' }, 404);
 
   const result = db.prepare(`
-    INSERT INTO mailbox_registrations (email, app_name, username, password, label, memo)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO mailbox_registrations (email, app_name, username, password, memo)
+    VALUES (?, ?, ?, ?, ?)
   `).run(
     email,
     appName,
     String(body.username ?? '').trim(),
     String(body.password ?? ''),
-    String(body.label ?? '').trim(),
     String(body.memo ?? '').trim(),
   );
   logActivity('green', `Added registration for ${appName} (${email})`);
@@ -195,7 +193,6 @@ accountsRoutes.patch('/admin/accounts/registrations/:id', async (c) => {
     app_name: (v) => String(v ?? '').trim(),
     username: (v) => String(v ?? '').trim(),
     password: (v) => String(v ?? ''),
-    label: (v) => String(v ?? '').trim(),
     memo: (v) => String(v ?? '').trim(),
   });
   if (!setClause) return c.json({ error: 'No fields to update' }, 400);

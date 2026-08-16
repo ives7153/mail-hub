@@ -264,7 +264,6 @@ CREATE TABLE IF NOT EXISTS mailbox_registrations (
   app_name   TEXT NOT NULL,
   username   TEXT NOT NULL DEFAULT '',
   password   TEXT NOT NULL DEFAULT '',
-  label      TEXT NOT NULL DEFAULT '',
   memo       TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -313,6 +312,9 @@ export function initDb(): Database.Database {
     // from being written; icloud_addresses has carried the same column from
     // birth for the same reason.
     `ALTER TABLE outlook_accounts ADD COLUMN assigned_at TEXT`,
+    // mailbox_registrations.label removed — the "label" concept is merged into
+    // app_name. New installs never have the column; existing ones drop it.
+    `ALTER TABLE mailbox_registrations DROP COLUMN label`,
   ];
   for (const sql of migrations) {
     try { db.exec(sql); } catch (e) {

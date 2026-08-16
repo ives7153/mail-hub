@@ -2875,6 +2875,7 @@ Authorization: Bearer &lt;your-api-key&gt;
           <input id="accounts-search" class="search-box" style="width:100%" oninput="renderAccounts()" data-i18n-ph="accounts.search_ph" placeholder="搜索邮箱或应用名…">
         </div>
       </div>
+      <div id="accounts-filter" style="display:flex;gap:6px;flex-wrap:wrap;padding:0 20px 12px"></div>
       <div id="accounts-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;padding:0 20px 20px"></div>
     </div>
 
@@ -2892,7 +2893,7 @@ Authorization: Bearer &lt;your-api-key&gt;
 const LANG = {
 zh: {
 'nav.dashboard':'仪表盘','nav.inboxes':'收件箱','nav.blocks':'封禁表','nav.services':'目标服务','nav.providers':'渠道管理','nav.outlook':'Outlook','nav.yyds':'YYDS Mail','nav.imap':'IMAP 域名邮箱','nav.icloud':'iCloud 别名','icloud.title':'iCloud 别名','icloud.accounts':'Apple ID 列表','icloud.add_account':'添加 Apple ID','icloud.apple_id':'Apple ID','icloud.region':'区域','icloud.cookies':'Cookie 请求头','icloud.imap_password':'邮箱的应用专用密码','icloud.imap_user':'收信邮箱','icloud.imap_user_ph':'隐藏邮件实际转发到的那个信箱（icloud.com → 设置 → 隐藏邮件 可查）','icloud.imap_host':'收信 IMAP 主机','icloud.imap_host_ph':'按收信邮箱自动填，可改','icloud.add_btn':'添加','icloud.free':'可用地址','icloud.assigned':'已占用','icloud.pool':'地址池','icloud.address':'地址','icloud.use_count':'使用次数','icloud.assigned_to':'占用者','icloud.last_error':'最后错误','icloud.created':'创建时间','icloud.imap_other':'其他…','icloud.autofill':'自动补货','icloud.autofill_hint':'开启后按设定间隔自动向 Apple 申请地址，把池补到目标值；撞到限流会自动退避 45 分钟。关闭则完全不碰 Apple。','icloud.target_hint':'池里要维持多少个可用地址。单次最多铸 5 个，上限 750——那是一个 Apple ID 一辈子的名额。','icloud.autofill_on':'每 {n} 分钟检查一次','icloud.autofill_off':'已关闭，只能手动生成','icloud.autofill_enabled':'已开启自动补货','icloud.autofill_disabled':'已关闭自动补货','common.back':'返回','icloud.imap_preset':'收信服务商','icloud.search_accounts':'搜索 Apple ID…','icloud.search_addresses':'搜索地址…','icloud.pool_col':'地址池','icloud.auth_srp':'SRP','icloud.auth_cookie':'Cookie','icloud.filter_all':'全部状态','icloud.filter_free':'可用','icloud.filter_assigned':'已占用','icloud.filter_retired':'已停用','icloud.state_free':'可用','icloud.state_assigned':'已占用','icloud.state_retired':'已停用','icloud.view_mail':'查看邮件','icloud.no_mail':'这个地址还没收到任何邮件。','icloud.status_active':'正常','icloud.status_degraded':'仅收信','icloud.status_error':'异常','icloud.status_active_hint':'两半都通：能生成新地址，也能收信','icloud.status_degraded_hint':'Cookie 已过期。池里现有地址照常收信，但要生成新地址得重新粘贴 Cookie','icloud.status_error_hint':'收信不可用：这个账号的地址读不到邮件','icloud.recookie':'换 Cookie','icloud.srp':'SRP 登录','icloud.srp_password_hint':'Apple ID 的账号登录密码——不是 App 专用密码。\n会以只写方式保存，并在自动续期时重用；信任令牌有效时不需要验证码。','icloud.srp_password_ph':'Apple ID 密码','icloud.srp_code_title':'输入 6 位验证码','icloud.srp_code_prompt':'Apple 已把验证码推送到你已登录的苹果设备上。','icloud.srp_no_device':'手边没有苹果设备？改用短信接收：','icloud.srp_send_sms':'发短信','icloud.srp_sms_sending':'发送中…','icloud.srp_sms_sent':'已发送，请查收短信','icloud.srp_signing_in':'正在与 Apple 握手…','icloud.srp_trusted':'信任令牌仍有效，无需验证码，已直接登录','icloud.srp_done':'SRP 登录成功，信任令牌已保存——之后续期不再需要验证码','icloud.srp_failed':'SRP 登录失败：','icloud.srp_abandoned':'已取消（验证码已发出，重新登录会再推一个）','icloud.recookie_title':'粘贴新的 Cookie','icloud.recookie_save':'保存新 Cookie','icloud.fill_cookie':'请先粘贴 Cookie','icloud.recookie_hint':'Cookie 过期后在这里换，不用删账号重建。整坨 cURL 粘进来就行。','icloud.cookie_updated':'Cookie 已更新','icloud.cookies_ph':'在 icloud.com 的网络面板里右键任意请求 → 复制为 cURL，整段粘到这里。PowerShell 格式、Cookie-Editor 的 JSON、或者纯 Cookie 请求头，都能识别。','icloud.generate':'生成地址','icloud.generating':'生成中…','icloud.generated':'已生成 {n} 个地址','icloud.gen_failed':'生成失败：','icloud.no_account':'尚未添加 Apple ID','icloud.add_first':'添加第一个','icloud.empty_pool':'地址池为空，先在上方账号行点“生成地址”','icloud.ready':'就绪','icloud.needs_setup':'待配置','icloud.adding':'添加中…','icloud.added':'已添加，点“测试”验证 Cookie 与专用密码','icloud.add_failed':'添加失败：','icloud.fill_all':'Apple ID、Cookie、App 专用密码都要填','icloud.test_ok':'两项检测均通过','icloud.forwards_to':'隐藏邮件转发到：','icloud.confirm_delete':'删除该 Apple ID 及其未占用地址？已被占用的地址会阻止删除。','icloud.retire':'停用','icloud.confirm_retire':'停用 {hme}？\n\n· Apple 会关闭这个地址的转发，之后发到它的邮件全部丢失\n· 它永远不会再被分配给任何收件箱\n· 它继续占用 Apple ID 那 750 个名额中的一个，而且再也要不回来——每个 Apple ID 一辈子只有 750 个\n\n只有在这个地址已经被目标网站拉黑、留着也没用时才该停用。此操作不可撤销。','icloud.retired':'已停用 {hme}','icloud.help':'<div style=\"margin-bottom:6px\">需要 <b>iCloud+ 订阅</b>。两样东西要准备：</div><div style=\"display:flex;gap:8px;margin-top:4px\"><span style=\"color:var(--emerald);flex:none\">1</span><span><b>Cookie</b> —— 登录 icloud.com → 按 F12 → 网络面板 → 筛选框输 <code>hme</code> → 右键任意一条请求 → 复制为 cURL → <b>整段</b>粘到下面（不用自己找 Cookie 那一行）</span></div><div style=\"display:flex;gap:8px;margin-top:4px\"><span style=\"color:var(--emerald);flex:none\">2</span><span><b>收信邮箱与应用专用密码</b> —— 隐藏邮件转发到哪个信箱，就填哪个；密码到那个邮箱服务商处生成（Gmail 在 myaccount.google.com → 安全性 → 应用专用密码，需先开两步验证）</span></div><div style=\"margin-top:8px;padding-top:6px;border-top:1px solid var(--border)\">Cookie 几小时就过期。想一劳永逸，改用账号行的 <b>SRP 登录</b>：输一次密码和验证码，之后靠信任令牌自动续期。</div>','nav.templates':'自定义渠道','nav.gmail':'Gmail 别名','nav.accounts':'我的邮箱','nav.keys':'密钥管理','nav.settings':'系统设置','nav.docs':'API 文档','nav.refresh':'刷新当前页','nav.logout':'退出登录','nav.lang':'中/EN','nav.switch_lang':'切换语言','nav.theme':'主题',
-'accounts.title':'我的邮箱','accounts.tag':'登记簿','accounts.add_email':'添加邮箱','accounts.add_reg':'+账号','accounts.search_ph':'搜索邮箱或应用名…','accounts.email_ph':'邮箱地址','accounts.remark':'备注','accounts.tags':'标签','accounts.app_name':'应用名','accounts.username':'用户名','accounts.password':'密码','accounts.label':'标签','accounts.memo':'备忘录','accounts.view':'查看','accounts.hide':'隐藏','accounts.edit':'编辑','accounts.delete':'删除','accounts.reg_count':'{n} 个账号','accounts.source.outlook':'Outlook 池','accounts.source.imap':'IMAP 池','accounts.source.icloud':'iCloud 池','accounts.source.manual':'手动','accounts.confirm_del_email':'删除 {email} 及名下全部注册账号？','accounts.confirm_del_reg':'删除注册账号 {app}？','accounts.err_dup':'该邮箱已存在','accounts.err_pool_delete':'账号池邮箱不能删除','accounts.err_pool_edit':'账号池邮箱不能编辑','accounts.err_invalid_email':'邮箱地址格式不对','accounts.add_email_title':'添加邮箱','accounts.edit_email_title':'编辑邮箱','accounts.add_reg_title':'添加账号','accounts.edit_reg_title':'编辑账号',
+'accounts.title':'我的邮箱','accounts.tag':'登记簿','accounts.add_email':'添加邮箱','accounts.add_reg':'+账号','accounts.search_ph':'搜索邮箱或应用名…','accounts.email_ph':'邮箱地址','accounts.remark':'备注','accounts.tags':'标签','accounts.app_name':'应用名','accounts.username':'用户名','accounts.password':'密码','accounts.memo':'备忘录','accounts.all':'全部','accounts.presets':'常用应用','accounts.view':'查看','accounts.hide':'隐藏','accounts.edit':'编辑','accounts.delete':'删除','accounts.reg_count':'{n} 个账号','accounts.source.outlook':'Outlook 池','accounts.source.imap':'IMAP 池','accounts.source.icloud':'iCloud 池','accounts.source.manual':'手动','accounts.confirm_del_email':'删除 {email} 及名下全部注册账号？','accounts.confirm_del_reg':'删除注册账号 {app}？','accounts.err_dup':'该邮箱已存在','accounts.err_pool_delete':'账号池邮箱不能删除','accounts.err_pool_edit':'账号池邮箱不能编辑','accounts.err_invalid_email':'邮箱地址格式不对','accounts.add_email_title':'添加邮箱','accounts.edit_email_title':'编辑邮箱','accounts.add_reg_title':'添加账号','accounts.edit_reg_title':'编辑账号',
 'theme.switched.auto':'主题: 跟随系统','theme.switched.light':'主题: 浅色','theme.switched.dark':'主题: 深色',
 'login.prompt':'请输入 API 密钥登录','login.btn':'登录',
 'dash.title':'仪表盘','dash.active_providers':'活跃渠道','dash.active_inboxes':'活跃邮箱','dash.block_rules':'封禁规则','dash.tracked_services':'追踪服务','dash.recent_inboxes':'最近邮箱','dash.recent_activity':'最近动态','dash.no_activity':'暂无动态',
@@ -3003,7 +3004,7 @@ zh: {
 },
 en: {
 'nav.dashboard':'Dashboard','nav.inboxes':'Inboxes','nav.blocks':'Blocks','nav.services':'Services','nav.providers':'Providers','nav.outlook':'Outlook','nav.yyds':'YYDS Mail','nav.imap':'IMAP Domain Mail','nav.icloud':'iCloud Aliases','icloud.title':'iCloud Aliases','icloud.accounts':'Apple IDs','icloud.add_account':'Add Apple ID','icloud.apple_id':'Apple ID','icloud.region':'Region','icloud.cookies':'Cookie header','icloud.imap_password':'Mailbox app password','icloud.imap_user':'Receiving mailbox','icloud.imap_user_ph':'Where Hide My Email actually forwards (icloud.com, Settings, Hide My Email)','icloud.imap_host':'Receiving IMAP host','icloud.imap_host_ph':'Filled from the mailbox domain; editable','icloud.add_btn':'Add','icloud.free':'Free addresses','icloud.assigned':'In use','icloud.pool':'Address pool','icloud.address':'Address','icloud.use_count':'Uses','icloud.assigned_to':'Held by','icloud.last_error':'Last error','icloud.created':'Created','icloud.imap_other':'Other…','icloud.autofill':'Auto refill','icloud.autofill_hint':'Asks Apple for addresses on a schedule until the pool reaches the target, backing off 45 minutes when rate limited. Off means Apple is not contacted at all.','icloud.target_hint':'How many free addresses to keep. At most 5 are minted per pass, and 750 is the ceiling — the lifetime cap on one Apple ID.','icloud.autofill_on':'checks every {n} min','icloud.autofill_off':'off — manual only','icloud.autofill_enabled':'Auto refill on','icloud.autofill_disabled':'Auto refill off','common.back':'Back','icloud.imap_preset':'Mail provider','icloud.search_accounts':'Search Apple IDs…','icloud.search_addresses':'Search addresses…','icloud.pool_col':'Pool','icloud.auth_srp':'SRP','icloud.auth_cookie':'Cookie','icloud.filter_all':'All states','icloud.filter_free':'Free','icloud.filter_assigned':'In use','icloud.filter_retired':'Retired','icloud.state_free':'free','icloud.state_assigned':'in use','icloud.state_retired':'retired','icloud.view_mail':'View mail','icloud.no_mail':'Nothing has arrived at this address yet.','icloud.status_active':'Ready','icloud.status_degraded':'Receive only','icloud.status_error':'Failing','icloud.status_active_hint':'Both halves work: can mint new addresses and read mail','icloud.status_degraded_hint':'Cookie expired. Addresses already in the pool still receive; minting needs a fresh cookie','icloud.status_error_hint':'Reading is broken: mail for this account cannot be read','icloud.recookie':'New cookie','icloud.srp':'SRP sign-in','icloud.srp_password_hint':'Your Apple ID account password — not an app-specific one.\nStored write-only and reused for automatic renewal; no code is needed while the trust token remains valid.','icloud.srp_password_ph':'Apple ID password','icloud.srp_code_title':'Enter the six-digit code','icloud.srp_code_prompt':'Apple pushed a code to your signed-in Apple devices.','icloud.srp_no_device':'No Apple device to hand? Get it by SMS instead:','icloud.srp_send_sms':'Send SMS','icloud.srp_sms_sending':'Sending…','icloud.srp_sms_sent':'Sent — check your messages','icloud.srp_signing_in':'Handshaking with Apple…','icloud.srp_trusted':'The stored trust token is still good — signed in with no code','icloud.srp_done':'Signed in over SRP. The trust token is saved, so renewal needs no code.','icloud.srp_failed':'SRP sign-in failed: ','icloud.srp_abandoned':'Cancelled (the code was already sent; signing in again pushes a new one)','icloud.recookie_title':'Paste a new cookie','icloud.recookie_save':'Save new cookie','icloud.fill_cookie':'Paste the cookie first','icloud.recookie_hint':'Cookies expire — replace one here instead of recreating the account. Paste the whole cURL.','icloud.cookie_updated':'Cookie updated','icloud.cookies_ph':'In the Network panel on icloud.com, right-click any request and Copy as cURL, then paste the whole thing. PowerShell format, a Cookie-Editor JSON export, or a bare Cookie header all work too.','icloud.generate':'Generate','icloud.generating':'Generating…','icloud.generated':'Generated {n} address(es)','icloud.gen_failed':'Generation failed: ','icloud.no_account':'No Apple ID added yet','icloud.add_first':'Add the first one','icloud.empty_pool':'Pool is empty — press Generate on an account row above','icloud.ready':'Ready','icloud.needs_setup':'Needs setup','icloud.adding':'Adding…','icloud.added':'Added — press Test to verify the cookie and app password','icloud.add_failed':'Add failed: ','icloud.fill_all':'Apple ID, cookie and app-specific password are all required','icloud.test_ok':'Both checks passed','icloud.forwards_to':'Hide My Email delivers to: ','icloud.confirm_delete':'Delete this Apple ID and its unused addresses? Addresses held by live inboxes will block the delete.','icloud.retire':'Retire','icloud.confirm_retire':'Retire {hme}?\n\n· Apple stops forwarding it, so anything sent there is lost\n· It is never handed to another inbox again\n· It still occupies one of the Apple ID’s 750 slots, and that slot never comes back — 750 is the lifetime total for one ID\n\nWorth doing only when a target has already blocked the address, so keeping it buys nothing. This cannot be undone.','icloud.retired':'Retired {hme}','icloud.help':'<div style=\"margin-bottom:6px\">Requires an <b>iCloud+ subscription</b>. Two things to gather:</div><div style=\"display:flex;gap:8px;margin-top:4px\"><span style=\"color:var(--emerald);flex:none\">1</span><span><b>Cookie</b> — sign in at icloud.com, press F12, open Network, filter for <code>hme</code>, right-click any request, Copy as cURL, and paste <b>the whole thing</b> below. No need to find the Cookie line yourself.</span></div><div style=\"display:flex;gap:8px;margin-top:4px\"><span style=\"color:var(--emerald);flex:none\">2</span><span><b>Receiving mailbox and app password</b> — whichever mailbox Hide My Email forwards to. Generate the password at that provider (Gmail: myaccount.google.com, Security, App passwords, which needs 2-Step Verification on first).</span></div><div style=\"margin-top:8px;padding-top:6px;border-top:1px solid var(--border)\">Cookies expire within hours. To stop replacing them, use <b>SRP sign-in</b> on the account row instead: one password and one code, then the trust token renews itself.</div>','nav.templates':'Custom Providers','nav.gmail':'Gmail Aliases','nav.accounts':'My Emails','nav.keys':'API Keys','nav.settings':'Settings','nav.docs':'API Docs','nav.refresh':'Refresh Page','nav.logout':'Logout','nav.lang':'EN/中','nav.switch_lang':'Switch Language','nav.theme':'Theme',
-'accounts.title':'My Emails','accounts.tag':'Register','accounts.add_email':'Add Email','accounts.add_reg':'+Account','accounts.search_ph':'Search email or app…','accounts.email_ph':'Email address','accounts.remark':'Remark','accounts.tags':'Tags','accounts.app_name':'App','accounts.username':'Username','accounts.password':'Password','accounts.label':'Label','accounts.memo':'Memo','accounts.view':'Show','accounts.hide':'Hide','accounts.edit':'Edit','accounts.delete':'Delete','accounts.reg_count':'{n} account(s)','accounts.source.outlook':'Outlook pool','accounts.source.imap':'IMAP pool','accounts.source.icloud':'iCloud pool','accounts.source.manual':'Manual','accounts.confirm_del_email':'Delete {email} and all its registrations?','accounts.confirm_del_reg':'Delete registration {app}?','accounts.err_dup':'Email already exists','accounts.err_pool_delete':'Pool email can\'t be deleted','accounts.err_pool_edit':'Pool email can\'t be edited','accounts.err_invalid_email':'Invalid email address','accounts.add_email_title':'Add Email','accounts.edit_email_title':'Edit Email','accounts.add_reg_title':'Add Account','accounts.edit_reg_title':'Edit Account',
+'accounts.title':'My Emails','accounts.tag':'Register','accounts.add_email':'Add Email','accounts.add_reg':'+Account','accounts.search_ph':'Search email or app…','accounts.email_ph':'Email address','accounts.remark':'Remark','accounts.tags':'Tags','accounts.app_name':'App','accounts.username':'Username','accounts.password':'Password','accounts.memo':'Memo','accounts.all':'All','accounts.presets':'Common Apps','accounts.view':'Show','accounts.hide':'Hide','accounts.edit':'Edit','accounts.delete':'Delete','accounts.reg_count':'{n} account(s)','accounts.source.outlook':'Outlook pool','accounts.source.imap':'IMAP pool','accounts.source.icloud':'iCloud pool','accounts.source.manual':'Manual','accounts.confirm_del_email':'Delete {email} and all its registrations?','accounts.confirm_del_reg':'Delete registration {app}?','accounts.err_dup':'Email already exists','accounts.err_pool_delete':'Pool email can\'t be deleted','accounts.err_pool_edit':'Pool email can\'t be edited','accounts.err_invalid_email':'Invalid email address','accounts.add_email_title':'Add Email','accounts.edit_email_title':'Edit Email','accounts.add_reg_title':'Add Account','accounts.edit_reg_title':'Edit Account',
 'theme.switched.auto':'Theme: system','theme.switched.light':'Theme: light','theme.switched.dark':'Theme: dark',
 'login.prompt':'Enter API key to login','login.btn':'Login',
 'dash.title':'Dashboard','dash.active_providers':'Active Providers','dash.active_inboxes':'Active Inboxes','dash.block_rules':'Block Rules','dash.tracked_services':'Tracked Services','dash.recent_inboxes':'Recent Inboxes','dash.recent_activity':'Recent Activity','dash.no_activity':'No activity yet',
@@ -3398,6 +3399,15 @@ function refreshCurrentView() {
 // ─── My Emails (accounts) ───
 let _accountsEmails = [];
 let _accountsRegs = [];
+let _accountsFilter = ''; // '' = 全部, otherwise an app_name
+
+// Common apps shown as quick-pick chips in the add-registration dialog.
+const ACCOUNT_APP_PRESETS = [
+  'GitHub','Google','Telegram','Discord','Steam','Claude','OpenAI','ChatGPT',
+  'Twitter / X','Facebook','Instagram','Microsoft','Apple ID','Netflix','Spotify',
+  'Notion','Figma','Cloudflare','Vercel','AWS','Google Cloud','腾讯云','阿里云',
+  '微信','QQ','支付宝','淘宝','京东','B站','知乎','微博','抖音','邮箱','VPS',
+];
 
 async function loadAccounts() {
   try {
@@ -3412,7 +3422,27 @@ async function loadAccounts() {
     _accountsEmails = [];
     _accountsRegs = [];
   }
+  renderAccountsFilter();
   renderAccounts();
+}
+
+// App filter tabs: 「全部」 + every distinct app_name already in use.
+function renderAccountsFilter() {
+  const bar = document.getElementById('accounts-filter');
+  if (!bar) return;
+  const apps = [...new Set(_accountsRegs.map(r => r.app_name).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'zh'));
+  const tabs = [`<button class="btn btn-sm ${_accountsFilter === '' ? 'btn-primary' : ''}" onclick="return setAccountsFilter('')">${esc(t('accounts.all'))}</button>`];
+  for (const app of apps) {
+    tabs.push(`<button class="btn btn-sm ${_accountsFilter === app ? 'btn-primary' : ''}" onclick="return setAccountsFilter(${jsArg(app)})">${esc(app)}</button>`);
+  }
+  bar.innerHTML = tabs.join('');
+}
+
+function setAccountsFilter(app) {
+  _accountsFilter = app === '' ? '' : String(app);
+  renderAccountsFilter();
+  renderAccounts();
+  return false;
 }
 
 function renderAccounts() {
@@ -3420,12 +3450,17 @@ function renderAccounts() {
   if (!grid) return;
   const kw = (document.getElementById('accounts-search')?.value || '').trim().toLowerCase();
   let emails = _accountsEmails;
+  if (_accountsFilter) {
+    emails = emails.filter(m =>
+      _accountsRegs.some(r => r.email.toLowerCase() === m.email.toLowerCase() && r.app_name === _accountsFilter),
+    );
+  }
   if (kw) {
     emails = emails.filter(m => {
       if (m.email.toLowerCase().includes(kw)) return true;
       return _accountsRegs.some(r =>
         r.email.toLowerCase() === m.email.toLowerCase() &&
-        [r.app_name, r.username, r.label, r.memo].some(v => v.toLowerCase().includes(kw)),
+        [r.app_name, r.username, r.memo].some(v => v.toLowerCase().includes(kw)),
       );
     });
   }
@@ -3433,7 +3468,8 @@ function renderAccounts() {
 }
 
 function accountCardHtml(m) {
-  const regs = _accountsRegs.filter(r => r.email.toLowerCase() === m.email.toLowerCase());
+  let regs = _accountsRegs.filter(r => r.email.toLowerCase() === m.email.toLowerCase());
+  if (_accountsFilter) regs = regs.filter(r => r.app_name === _accountsFilter);
   const isManual = m.source === 'manual';
   const sourceLabel = t('accounts.source.' + m.source) || m.source;
   const editBtn = isManual
@@ -3465,16 +3501,32 @@ function regRowHtml(r) {
   return `
     <div class="reg-row" style="display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border);flex-wrap:wrap">
       <div style="flex:1;min-width:160px">
-        <div style="font-weight:var(--fw-medium)">${esc(r.app_name)}${r.label ? ` <span class="badge">${esc(r.label)}</span>` : ''}</div>
+        <div style="font-weight:var(--fw-medium)">${esc(r.app_name)}</div>
         <div style="font-size:var(--text-sm);color:var(--text3)">${esc(r.username)}${r.memo ? ` · ${esc(r.memo)}` : ''}</div>
       </div>
       <div style="display:flex;align-items:center;gap:4px">
         <input type="password" class="reg-pwd" readonly value="${escAttr(r.password)}" style="width:120px;background:var(--control-subtle-bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 8px;font-family:var(--font-mono);font-size:var(--text-sm);color:var(--text)">
         <button class="btn btn-sm" onclick="return togglePwd(this)">${esc(t('accounts.view'))}</button>
       </div>
-      <button class="btn btn-sm" onclick="return showEditRegDialog(${r.id})">${esc(t('accounts.edit'))}</button>
-      <button class="btn btn-sm btn-danger" onclick="return delReg(${r.id})">${esc(t('accounts.delete'))}</button>
+      <div class="reg-menu" style="position:relative">
+        <button class="btn btn-sm" onclick="return toggleRegMenu(this)">···</button>
+        <div class="reg-menu-dropdown" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:30;min-width:110px;padding:4px">
+          <button class="btn btn-sm" style="width:100%;justify-content:flex-start" onclick="return closeRegMenu(),showEditRegDialog(${r.id})">${esc(t('accounts.edit'))}</button>
+          <button class="btn btn-sm btn-danger" style="width:100%;justify-content:flex-start" onclick="return closeRegMenu(),delReg(${r.id})">${esc(t('accounts.delete'))}</button>
+        </div>
+      </div>
     </div>`;
+}
+
+function toggleRegMenu(btn) {
+  const menu = btn.parentElement.querySelector('.reg-menu-dropdown');
+  const open = menu.style.display === 'block';
+  document.querySelectorAll('.reg-menu-dropdown').forEach(el => el.style.display = 'none');
+  menu.style.display = open ? 'none' : 'block';
+  return false;
+}
+function closeRegMenu() {
+  document.querySelectorAll('.reg-menu-dropdown').forEach(el => el.style.display = 'none');
 }
 
 function togglePwd(btn) {
@@ -3551,14 +3603,26 @@ async function delEmail(email) {
 }
 
 // ─── Registration dialogs ───
+function appPresetChipsHtml(inputId) {
+  return ACCOUNT_APP_PRESETS
+    .map(app => `<button type="button" class="btn btn-sm app-chip" onclick="return pickAppPreset('${inputId}', ${jsArg(app)})">${esc(app)}</button>`)
+    .join('');
+}
+
+function pickAppPreset(inputId, app) {
+  const el = document.getElementById(inputId);
+  if (el) el.value = app;
+  return false;
+}
+
 function showAddRegDialog(email) {
   showDialog(t('accounts.add_reg_title'), `
     <div style="display:grid;gap:10px;padding:16px 0">
       <div style="font-size:var(--text-md);color:var(--text3)">${esc(email)}</div>
       <div class="form-group"><label>${esc(t('accounts.app_name'))}</label><input id="rg-app" class="search-box" style="width:100%" data-i18n-ph="accounts.app_name" placeholder="${escAttr(t('accounts.app_name'))}"></div>
+      <div class="form-group"><label>${esc(t('accounts.presets'))}</label><div style="display:flex;gap:4px;flex-wrap:wrap">${appPresetChipsHtml('rg-app')}</div></div>
       <div class="form-group"><label>${esc(t('accounts.username'))}</label><input id="rg-user" class="search-box" style="width:100%" data-i18n-ph="accounts.username" placeholder="${escAttr(t('accounts.username'))}"></div>
       <div class="form-group"><label>${esc(t('accounts.password'))}</label><input id="rg-pwd" type="password" class="search-box" style="width:100%" data-i18n-ph="accounts.password" placeholder="${escAttr(t('accounts.password'))}"></div>
-      <div class="form-group"><label>${esc(t('accounts.label'))}</label><input id="rg-label" class="search-box" style="width:100%" data-i18n-ph="accounts.label" placeholder="${escAttr(t('accounts.label'))}"></div>
       <div class="form-group"><label>${esc(t('accounts.memo'))}</label><input id="rg-memo" class="search-box" style="width:100%" data-i18n-ph="accounts.memo" placeholder="${escAttr(t('accounts.memo'))}"></div>
     </div>`,
     `<button class="btn" data-no-loading onclick="return hideDialog()">${esc(t('common.cancel'))}</button>
@@ -3573,7 +3637,6 @@ async function saveAddReg(email) {
     appName,
     username: (document.getElementById('rg-user').value || '').trim(),
     password: document.getElementById('rg-pwd').value || '',
-    label: (document.getElementById('rg-label').value || '').trim(),
     memo: (document.getElementById('rg-memo').value || '').trim(),
   };
   try {
@@ -3592,9 +3655,9 @@ function showEditRegDialog(id) {
     <div style="display:grid;gap:10px;padding:16px 0">
       <div style="font-size:var(--text-md);color:var(--text3)">${esc(r.email)}</div>
       <div class="form-group"><label>${esc(t('accounts.app_name'))}</label><input id="re-app" class="search-box" style="width:100%" value="${escAttr(r.app_name)}"></div>
+      <div class="form-group"><label>${esc(t('accounts.presets'))}</label><div style="display:flex;gap:4px;flex-wrap:wrap">${appPresetChipsHtml('re-app')}</div></div>
       <div class="form-group"><label>${esc(t('accounts.username'))}</label><input id="re-user" class="search-box" style="width:100%" value="${escAttr(r.username)}"></div>
       <div class="form-group"><label>${esc(t('accounts.password'))}</label><input id="re-pwd" type="password" class="search-box" style="width:100%" value="${escAttr(r.password)}"></div>
-      <div class="form-group"><label>${esc(t('accounts.label'))}</label><input id="re-label" class="search-box" style="width:100%" value="${escAttr(r.label)}"></div>
       <div class="form-group"><label>${esc(t('accounts.memo'))}</label><input id="re-memo" class="search-box" style="width:100%" value="${escAttr(r.memo)}"></div>
     </div>`,
     `<button class="btn" data-no-loading onclick="return hideDialog()">${esc(t('common.cancel'))}</button>
@@ -3607,7 +3670,6 @@ async function saveEditReg(id) {
     app_name: (document.getElementById('re-app').value || '').trim(),
     username: (document.getElementById('re-user').value || '').trim(),
     password: document.getElementById('re-pwd').value || '',
-    label: (document.getElementById('re-label').value || '').trim(),
     memo: (document.getElementById('re-memo').value || '').trim(),
   };
   try {
@@ -3630,6 +3692,11 @@ async function delReg(id) {
   } catch (e) { toast(e.message, 'error'); }
   return false;
 }
+
+// Click anywhere outside a reg-row menu closes every open one.
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.reg-menu')) closeRegMenu();
+});
 
 document.querySelectorAll('.nav-icon[data-view]').forEach(btn => {
   btn.addEventListener('click', () => {

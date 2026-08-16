@@ -17,7 +17,6 @@ type Registration = {
   app_name: string;
   username: string;
   password: string;
-  label: string;
   memo: string;
 };
 
@@ -185,7 +184,6 @@ describe('registrations CRUD', () => {
       appName: 'GitHub',
       username: 'me',
       password: 'secret',
-      label: '工作',
       memo: '主账号',
     });
     expect(res.status).toBe(201);
@@ -193,7 +191,6 @@ describe('registrations CRUD', () => {
     expect(regs).toHaveLength(1);
     expect(regs[0].app_name).toBe('GitHub');
     expect(regs[0].password).toBe('secret');
-    expect(regs[0].label).toBe('工作');
     expect(regs[0].memo).toBe('主账号');
   });
 
@@ -213,12 +210,12 @@ describe('registrations CRUD', () => {
     const res = await app.request(`/api/admin/accounts/registrations/${id}`, {
       method: 'PATCH',
       headers: jsonHeaders(),
-      body: JSON.stringify({ password: 'new-pwd', label: '新标签' }),
+      body: JSON.stringify({ password: 'new-pwd', memo: '新备注' }),
     });
     expect(res.status).toBe(200);
     const regs = await listRegs('pool@outlook.com');
     expect(regs[0].password).toBe('new-pwd');
-    expect(regs[0].label).toBe('新标签');
+    expect(regs[0].memo).toBe('新备注');
   });
 
   it('deletes a registration', async () => {
@@ -232,7 +229,7 @@ describe('registrations CRUD', () => {
     expect(await listRegs('pool@outlook.com')).toHaveLength(0);
   });
 
-  it('supports keyword search across app/username/label/memo', async () => {
+  it('supports keyword search across app/username/memo', async () => {
     await addReg('pool@outlook.com', { appName: 'Netflix', username: 'watcher', password: 'p' });
     const res = await app.request('/api/admin/accounts/registrations?keyword=netfl', { headers: authHeaders() });
     expect(res.status).toBe(200);
