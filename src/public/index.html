@@ -3504,29 +3504,28 @@ function regRowHtml(r) {
         <div style="font-weight:var(--fw-medium)">${esc(r.app_name)}</div>
         <div style="font-size:var(--text-sm);color:var(--text3)">${esc(r.username)}${r.memo ? ` · ${esc(r.memo)}` : ''}</div>
       </div>
-      <div style="display:flex;align-items:center;gap:4px">
+      <div class="reg-actions" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
         <input type="password" class="reg-pwd" readonly value="${escAttr(r.password)}" style="width:120px;background:var(--control-subtle-bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 8px;font-family:var(--font-mono);font-size:var(--text-sm);color:var(--text)">
         <button class="btn btn-sm" onclick="return togglePwd(this)">${esc(t('accounts.view'))}</button>
-      </div>
-      <div class="reg-menu" style="position:relative">
         <button class="btn btn-sm" onclick="return toggleRegMenu(this)">···</button>
-        <div class="reg-menu-dropdown" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--bg1);border:1px solid var(--border);border-radius:var(--radius-sm);box-shadow:0 6px 20px rgba(0,0,0,.18);z-index:30;min-width:110px;padding:4px">
-          <button class="btn btn-sm" style="width:100%;justify-content:flex-start" onclick="return closeRegMenu(),showEditRegDialog(${r.id})">${esc(t('accounts.edit'))}</button>
-          <button class="btn btn-sm btn-danger" style="width:100%;justify-content:flex-start" onclick="return closeRegMenu(),delReg(${r.id})">${esc(t('accounts.delete'))}</button>
+        <div class="reg-menu-more" style="display:none;gap:4px">
+          <button class="btn btn-sm" onclick="return closeRegMenu(),showEditRegDialog(${r.id})">${esc(t('accounts.edit'))}</button>
+          <button class="btn btn-sm btn-danger" onclick="return closeRegMenu(),delReg(${r.id})">${esc(t('accounts.delete'))}</button>
         </div>
       </div>
     </div>`;
 }
 
 function toggleRegMenu(btn) {
-  const menu = btn.parentElement.querySelector('.reg-menu-dropdown');
-  const open = menu.style.display === 'block';
-  document.querySelectorAll('.reg-menu-dropdown').forEach(el => el.style.display = 'none');
-  menu.style.display = open ? 'none' : 'block';
+  const wrap = btn.parentElement;
+  const more = wrap.querySelector('.reg-menu-more');
+  const open = more.style.display === 'flex';
+  closeRegMenu();
+  if (!open) { more.style.display = 'flex'; }
   return false;
 }
 function closeRegMenu() {
-  document.querySelectorAll('.reg-menu-dropdown').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.reg-menu-more').forEach(el => el.style.display = 'none');
 }
 
 function togglePwd(btn) {
@@ -3695,7 +3694,7 @@ async function delReg(id) {
 
 // Click anywhere outside a reg-row menu closes every open one.
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.reg-menu')) closeRegMenu();
+  if (!e.target.closest('.reg-actions')) closeRegMenu();
 });
 
 document.querySelectorAll('.nav-icon[data-view]').forEach(btn => {
