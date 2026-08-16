@@ -181,6 +181,69 @@ accountsRoutes.post('/admin/accounts/emails/:email/registrations', async (c) => 
   return c.json({ id: Number(result.lastInsertRowid), email, app_name: appName }, 201);
 });
 
+// Bulk-register apps against one or more mailboxes. For every email × app
+// pair that does not already exist, insert one registration row. Skips
+// duplicates (same email + app_name) and reports unknown mailboxes in errors.
+accountsRoutes.post('/admin/accounts/registrations/batch', async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const db = getDb();
+
+  const rawEmails: unknown[] = Array.isArray(body.emails) ? body.emails : [];
+  const rawApps: unknown[] = Array.isArray(body.apps) ? body.apps : [];
+  const emails: string[] = [...new Set(rawEmails.map(e => normalizeEmail(e)).filter(Boolean))];
+  const apps: { appName: string; username: string; password: string; memo: string }[] = rawApps
+    .map((a) => {
+      const rec = (typeof a === 'object' && a !== null ? a : {}) as Record<string, unknown>;
+      return {
+        appName: String(rec.appName ?? '').trim(),
+        username: String(rec.username ?? '').trim(),
+        password: String(rec.password ?? ''),
+        memo: String(rec.memo ?? '').trim(),
+      };
+    })
+    .filter(a => a.appName);
+
+  const added = { count: 0 };
+  const skipped = { count: 0 };
+  const errors: { email?: string; app?: string; reason: string }[] = [];
+
+  const poolEmails = new Set(allRows<{ email: string }>(db, MAILBOXES_SQL).map(r => r.email.toLowerCase()));
+  const existing = new Map<string, Set<string>>();
+  for (const row of allRows<{ email: string; app_name: string }>(
+    db, `SELECT LOWER(email) AS email, app_name FROM mailbox_registrations`,
+  )) {
+    if (!existing.has(row.email)) existing.set(row.email, new Set());
+    existing.get(row.email)!.add(row.app_name);
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO mailbox_registrations (email, app_name, username, password, memo)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  const runBatch = db.transaction(() => {
+    for (const email of emails) {
+      if (!poolEmails.has(email)) {
+        errors.push({ email, reason: 'unknown mailbox' });
+        continue;
+      }
+      for (const app of apps) {
+        if (existing.get(email)?.has(app.appName)) { skipped.count++; continue; }
+        insert.run(email, app.appName, app.username, app.password, app.memo);
+        if (!existing.has(email)) existing.set(email, new Set());
+        existing.get(email)!.add(app.appName);
+        added.count++;
+      }
+    }
+  });
+  runBatch();
+
+  if (added.count > 0) {
+    logActivity('green', `Bulk registrations: +${added.count} (${emails.length} mailbox(es) × ${apps.length} app(s))`);
+  }
+  return c.json({ added, skipped, errors });
+});
+
 accountsRoutes.patch('/admin/accounts/registrations/:id', async (c) => {
   const id = c.req.param('id');
   const body = await c.req.json().catch(() => ({}));

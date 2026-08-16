@@ -238,3 +238,63 @@ describe('registrations CRUD', () => {
     expect(regs.registrations[0].app_name).toBe('Netflix');
   });
 });
+
+describe('bulk batch registrations', () => {
+  beforeEach(() => {
+    const db = getDb();
+    db.prepare(`INSERT INTO outlook_accounts (email, password) VALUES (?, ?)`).run('pool@outlook.com', 'x');
+    db.prepare(`INSERT INTO mailbox_registry (email) VALUES (?)`).run('manual@example.com');
+  });
+
+  it('inserts email × app cartesian and reports counts', async () => {
+    const res = await app.request('/api/admin/accounts/registrations/batch', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        emails: ['pool@outlook.com', 'manual@example.com'],
+        apps: [
+          { appName: 'GitHub', username: 'u1', password: 'p1' },
+          { appName: 'Claude', username: 'u2', password: 'p2', memo: 'AI' },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = await jsonOf<{ added: { count: number }; skipped: { count: number }; errors: unknown[] }>(res);
+    expect(body.added.count).toBe(4); // 2 emails × 2 apps
+    expect(body.errors).toHaveLength(0);
+
+    const regs = await listRegs();
+    expect(regs).toHaveLength(4);
+    expect(regs.some(r => r.email === 'manual@example.com' && r.app_name === 'Claude' && r.memo === 'AI')).toBe(true);
+  });
+
+  it('skips duplicates (same email + app) and reports unknown mailboxes', async () => {
+    const db = getDb();
+    db.prepare(`INSERT INTO mailbox_registrations (email, app_name) VALUES (?, ?)`).run('pool@outlook.com', 'GitHub');
+
+    const res = await app.request('/api/admin/accounts/registrations/batch', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        emails: ['pool@outlook.com', 'nobody@nowhere.com'],
+        apps: [{ appName: 'GitHub', username: 'u' }],
+      }),
+    });
+    const body = await jsonOf<{ added: { count: number }; skipped: { count: number }; errors: { email?: string }[] }>(res);
+    expect(body.added.count).toBe(0); // GitHub already exists on pool
+    expect(body.skipped.count).toBe(1);
+    expect(body.errors).toHaveLength(1);
+    expect(body.errors[0].email).toBe('nobody@nowhere.com');
+  });
+
+  it('rejects when no apps provided', async () => {
+    const res = await app.request('/api/admin/accounts/registrations/batch', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ emails: ['pool@outlook.com'], apps: [] }),
+    });
+    expect(res.status).toBe(200); // empty batch is a no-op, not an error
+    const body = await jsonOf<{ added: { count: number } }>(res);
+    expect(body.added.count).toBe(0);
+  });
+});
